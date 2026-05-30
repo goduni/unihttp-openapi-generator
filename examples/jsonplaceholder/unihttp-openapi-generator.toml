@@ -1,0 +1,14 @@
+# Settings for regenerating this example's client.
+# Auto-discovered by `unihttp-openapi-generator generate` run from this directory.
+spec = "openapi.yaml"
+output_dir = "jsonplaceholder_library"
+package_name = "jsonplaceholder_client"
+
+# adaptix (not pydantic/msgspec) because JSONPlaceholder uses camelCase query
+# params (userId, postId): adaptix aliases request params via name_mapping, while
+# the pydantic/msgspec dumpers don't alias params yet (a unihttp-side limitation).
+serializer = "adaptix"
+client = "sync"
+sync_backend = "requests"
+layout = "grouped"
+file_layout = "per-object"

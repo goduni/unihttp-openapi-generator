@@ -1,0 +1,111 @@
+[project]
+name = "unihttp-openapi-generator"
+version = "0.1.0"
+description = "Generate typed Python API clients from OpenAPI 3.0/3.1 specs, built on unihttp"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "goduni" }]
+keywords = [
+    "openapi",
+    "openapi3",
+    "swagger",
+    "code-generator",
+    "codegen",
+    "api-client",
+    "http-client",
+    "rest",
+    "client-generator",
+    "sdk-generator",
+    "unihttp",
+    "pydantic",
+    "msgspec",
+    "adaptix",
+    "async",
+    "typed",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Code Generators",
+    "Typing :: Typed",
+]
+dependencies = [
+    "typer>=0.12.0",
+    "jinja2>=3.1.0",
+    "pyyaml>=6.0",
+    "httpx>=0.28.0",
+    "openapi-spec-validator>=0.7.1",
+    "referencing>=0.35.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    # ruff is invoked at runtime to import-sort and format every generated file.
+    "ruff>=0.6.0",
+]
+
+[project.optional-dependencies]
+# `--check` runs ruff + mypy --strict on the generated package. ruff is already a
+# core dependency, so this extra only needs to add mypy.
+check = ["mypy>=1.10.0"]
+
+[project.scripts]
+unihttp-openapi-generator = "unihttp_openapi_generator.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/goduni/unihttp-openapi-generator"
+Repository = "https://github.com/goduni/unihttp-openapi-generator"
+Issues = "https://github.com/goduni/unihttp-openapi-generator/issues"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "mypy>=1.10.0",
+    "types-pyyaml>=6.0.0",
+    "adaptix>=3.0.0b12",
+    "msgspec>=0.21.1",
+    "unihttp",
+    "requests>=2.34.2",
+    "aiohttp>=3.13.5",
+    "pytest-cov>=7.1.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.8,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# Jinja2 templates ship inside the package.
+source-include = ["src/unihttp_openapi_generator/render/templates/**"]
+
+[tool.uv.sources]
+unihttp = { git = "https://github.com/goduni/unihttp.git" }
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]

@@ -1,0 +1,11 @@
+# Settings for regenerating this example's client.
+# Auto-discovered by `unihttp-openapi-generator generate` run from this directory.
+spec = "openapi.yaml"
+output_dir = "open_meteo_library"
+package_name = "open_meteo_client"
+
+serializer = "msgspec"
+client = "async"
+async_backend = "httpx"
+layout = "flat"
+file_layout = "per-object"

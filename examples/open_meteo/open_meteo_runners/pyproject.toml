@@ -1,0 +1,11 @@
+[project]
+name = "open-meteo-runners"
+version = "0.0.0"
+description = "Runnable demo + assertions for the generated Open-Meteo client"
+requires-python = ">=3.12"
+dependencies = ["open-meteo-client"]
+
+# The runner depends on the generated library next door, wired as an editable
+# path source so `uv run` resolves it without any sys.path hacks.
+[tool.uv.sources]
+open-meteo-client = { path = "../open_meteo_library", editable = true }

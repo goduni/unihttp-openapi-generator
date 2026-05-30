@@ -1,0 +1,8 @@
+# Per-runner virtualenvs and lockfiles created by `uv run`
+.venv/
+uv.lock
+
+# Python caches / editable-install artifacts
+__pycache__/
+*.pyc
+*.egg-info/

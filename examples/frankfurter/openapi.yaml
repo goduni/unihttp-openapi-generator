@@ -1,0 +1,205 @@
+openapi: 3.1.0
+info:
+  title: Frankfurter API
+  version: "1.0.0"
+  description: >-
+    Foreign-exchange reference rates published by the European Central Bank,
+    served by the open-source Frankfurter API (https://frankfurter.dev).
+
+    NOTE: Frankfurter does not publish an OpenAPI document. This spec was
+    hand-authored to match the live API for the unihttp-openapi-generator
+    examples, and is kept deliberately small (the three no-auth GET endpoints
+    the runner exercises).
+servers:
+  - url: https://api.frankfurter.dev
+    description: Production
+paths:
+  /v1/latest:
+    get:
+      operationId: getLatestRates
+      summary: Latest exchange rates
+      description: The most recent reference rates available.
+      parameters:
+        - $ref: "#/components/parameters/Base"
+        - $ref: "#/components/parameters/Symbols"
+        - $ref: "#/components/parameters/Amount"
+      responses:
+        "200":
+          description: Latest rates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExchangeRates"
+  /v1/{date}:
+    get:
+      operationId: getRatesForDate
+      summary: Historical exchange rates for a date
+      description: >-
+        Reference rates for a specific day (YYYY-MM-DD). Rates are published on
+        working days around 16:00 CET; for weekends/holidays the API returns the
+        most recent prior working day.
+      parameters:
+        - name: date
+          in: path
+          required: true
+          description: ISO date, e.g. 2020-01-02.
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Base"
+        - $ref: "#/components/parameters/Symbols"
+        - $ref: "#/components/parameters/Amount"
+      responses:
+        "200":
+          description: Rates for the requested date.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExchangeRates"
+  /v1/{start_date}..{end_date}:
+    get:
+      operationId: getTimeSeries
+      summary: Time series of rates over a date range
+      description: >-
+        Reference rates for every working day in [start_date, end_date]. The API
+        snaps the bounds to the nearest published working days.
+      parameters:
+        - name: start_date
+          in: path
+          required: true
+          description: ISO start date, e.g. 2020-01-01.
+          schema:
+            type: string
+        - name: end_date
+          in: path
+          required: true
+          description: ISO end date, e.g. 2020-01-31.
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Base"
+        - $ref: "#/components/parameters/Symbols"
+        - $ref: "#/components/parameters/Amount"
+      responses:
+        "200":
+          description: Rates for each day in the range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimeSeriesRates"
+  /v1/{start_date}..:
+    get:
+      operationId: getTimeSeriesToNow
+      summary: Time series of rates from a date to today
+      description: Like the bounded range, but ends at the latest available day.
+      parameters:
+        - name: start_date
+          in: path
+          required: true
+          description: ISO start date, e.g. 2024-01-01.
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Base"
+        - $ref: "#/components/parameters/Symbols"
+        - $ref: "#/components/parameters/Amount"
+      responses:
+        "200":
+          description: Rates for each day from start_date to today.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimeSeriesRates"
+  /v1/currencies:
+    get:
+      operationId: getCurrencies
+      summary: Supported currencies
+      description: A map of supported currency codes to their display names.
+      responses:
+        "200":
+          description: Currency code -> name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrencyMap"
+components:
+  parameters:
+    Base:
+      name: base
+      in: query
+      required: false
+      description: Base currency to quote against (default EUR).
+      schema:
+        type: string
+    Symbols:
+      name: symbols
+      in: query
+      required: false
+      description: Limit the response to these target currencies.
+      style: form
+      explode: false
+      schema:
+        type: array
+        items:
+          type: string
+    Amount:
+      name: amount
+      in: query
+      required: false
+      description: Amount to convert (default 1).
+      schema:
+        type: number
+  schemas:
+    ExchangeRates:
+      type: object
+      description: Reference rates for a base currency on a given date.
+      required:
+        - amount
+        - base
+        - date
+        - rates
+      properties:
+        amount:
+          type: number
+          description: The amount that was converted.
+        base:
+          type: string
+          description: The base currency the rates are quoted against.
+        date:
+          type: string
+          format: date
+          description: The date the rates apply to.
+        rates:
+          type: object
+          description: Target currency code -> rate.
+          additionalProperties:
+            type: number
+    TimeSeriesRates:
+      type: object
+      description: Reference rates for each working day in a date range.
+      required:
+        - amount
+        - base
+        - start_date
+        - end_date
+        - rates
+      properties:
+        amount:
+          type: number
+        base:
+          type: string
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        rates:
+          type: object
+          description: ISO date -> (currency code -> rate).
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: number
+    CurrencyMap:
+      type: object
+      description: Currency code -> human-readable name.
+      additionalProperties:
+        type: string

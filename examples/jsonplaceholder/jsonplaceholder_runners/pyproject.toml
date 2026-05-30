@@ -1,0 +1,11 @@
+[project]
+name = "jsonplaceholder-runners"
+version = "0.0.0"
+description = "Runnable demo + assertions for the generated JSONPlaceholder client"
+requires-python = ">=3.12"
+dependencies = ["jsonplaceholder-client"]
+
+# The runner depends on the generated library next door, wired as an editable
+# path source so `uv run` resolves it without any sys.path hacks.
+[tool.uv.sources]
+jsonplaceholder-client = { path = "../jsonplaceholder_library", editable = true }

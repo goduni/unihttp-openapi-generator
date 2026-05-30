@@ -1,0 +1,301 @@
+openapi: 3.1.0
+info:
+  title: JSONPlaceholder
+  version: "1.0.0"
+  description: >-
+    Free fake REST API for testing and prototyping
+    (https://jsonplaceholder.typicode.com) — no auth.
+
+    NOTE: JSONPlaceholder publishes no OpenAPI document, so this spec is
+    hand-authored to match the live API. Writes (POST/PUT/DELETE) are faked by
+    the service: it echoes the body back with an assigned id but does not persist
+    anything.
+servers:
+  - url: https://jsonplaceholder.typicode.com
+    description: Production
+paths:
+  /posts:
+    get:
+      operationId: listPosts
+      tags: [posts]
+      summary: List posts
+      parameters:
+        - name: userId
+          in: query
+          required: false
+          description: Only posts by this user.
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: All posts.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Post"
+    post:
+      operationId: createPost
+      tags: [posts]
+      summary: Create a post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Post"
+      responses:
+        "201":
+          description: The created post (echoed, with a new id).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+  /posts/{id}:
+    get:
+      operationId: getPost
+      tags: [posts]
+      summary: Get a post by id
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: The post.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+    put:
+      operationId: updatePost
+      tags: [posts]
+      summary: Replace a post
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Post"
+      responses:
+        "200":
+          description: The updated post (echoed).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+    delete:
+      operationId: deletePost
+      tags: [posts]
+      summary: Delete a post
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Empty object.
+          content:
+            application/json:
+              schema:
+                type: object
+  /posts/{id}/comments:
+    get:
+      operationId: getPostComments
+      tags: [posts]
+      summary: Comments on a post
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Comments for the post.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Comment"
+  /comments:
+    get:
+      operationId: listComments
+      tags: [comments]
+      summary: List comments
+      parameters:
+        - name: postId
+          in: query
+          required: false
+          description: Only comments on this post.
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: All comments.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Comment"
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List users
+      responses:
+        "200":
+          description: All users.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+  /users/{id}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Get a user by id
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: The user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+  /todos:
+    get:
+      operationId: listTodos
+      tags: [todos]
+      summary: List todos
+      parameters:
+        - name: userId
+          in: query
+          required: false
+          description: Only todos for this user.
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: All todos.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Todo"
+  /todos/{id}:
+    get:
+      operationId: getTodo
+      tags: [todos]
+      summary: Get a todo by id
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: The todo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Todo"
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      description: Resource id.
+      schema:
+        type: integer
+  schemas:
+    Geo:
+      type: object
+      required: [lat, lng]
+      properties:
+        lat:
+          type: string
+        lng:
+          type: string
+    Address:
+      type: object
+      required: [street, suite, city, zipcode, geo]
+      properties:
+        street:
+          type: string
+        suite:
+          type: string
+        city:
+          type: string
+        zipcode:
+          type: string
+        geo:
+          $ref: "#/components/schemas/Geo"
+    Company:
+      type: object
+      required: [name, catchPhrase, bs]
+      properties:
+        name:
+          type: string
+        catchPhrase:
+          type: string
+        bs:
+          type: string
+    User:
+      type: object
+      required: [id, name, username, email, address, phone, website, company]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+        address:
+          $ref: "#/components/schemas/Address"
+        phone:
+          type: string
+        website:
+          type: string
+        company:
+          $ref: "#/components/schemas/Company"
+    Post:
+      type: object
+      required: [userId, id, title, body]
+      properties:
+        userId:
+          type: integer
+        id:
+          type: integer
+          readOnly: true
+        title:
+          type: string
+        body:
+          type: string
+    Comment:
+      type: object
+      required: [postId, id, name, email, body]
+      properties:
+        postId:
+          type: integer
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        body:
+          type: string
+    Todo:
+      type: object
+      required: [userId, id, title, completed]
+      properties:
+        userId:
+          type: integer
+        id:
+          type: integer
+        title:
+          type: string
+        completed:
+          type: boolean

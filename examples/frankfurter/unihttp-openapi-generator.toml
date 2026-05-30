@@ -1,0 +1,12 @@
+# Settings for regenerating this example's client.
+# Auto-discovered by `unihttp-openapi-generator generate` run from this directory,
+# so regen.sh needs no flags. CLI flags would override anything set here.
+spec = "openapi.yaml"
+output_dir = "frankfurter_library"
+package_name = "frankfurter_client"
+
+serializer = "adaptix"
+client = "sync"
+sync_backend = "httpx"
+layout = "flat"
+file_layout = "per-object"

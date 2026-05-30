@@ -1,0 +1,132 @@
+openapi: 3.1.0
+info:
+  title: Open-Meteo Forecast API
+  version: "1.0.0"
+  description: >-
+    Free weather forecast API (https://open-meteo.com) — no API key required.
+
+    NOTE: Open-Meteo does not publish an OpenAPI document, so this spec is
+    hand-authored to match the live `/v1/forecast` endpoint. Open-Meteo's
+    response shape depends on the variables requested via `current=` / `hourly=`;
+    this spec models exactly the fields the runner asks for (msgspec ignores any
+    extra fields), with `current` and `hourly` optional since each is only
+    present when requested.
+servers:
+  - url: https://api.open-meteo.com
+    description: Production
+paths:
+  /v1/forecast:
+    get:
+      operationId: getForecast
+      summary: Weather forecast for a coordinate
+      description: Current conditions and/or an hourly forecast for a latitude/longitude.
+      parameters:
+        - name: latitude
+          in: query
+          required: true
+          description: Latitude in decimal degrees.
+          schema:
+            type: number
+        - name: longitude
+          in: query
+          required: true
+          description: Longitude in decimal degrees.
+          schema:
+            type: number
+        - name: current
+          in: query
+          required: false
+          description: Current-condition variables to return.
+          style: form
+          explode: false
+          schema:
+            type: array
+            items:
+              type: string
+        - name: hourly
+          in: query
+          required: false
+          description: Hourly variables to return.
+          style: form
+          explode: false
+          schema:
+            type: array
+            items:
+              type: string
+        - name: timezone
+          in: query
+          required: false
+          description: Timezone name (e.g. UTC) or "auto".
+          schema:
+            type: string
+        - name: forecast_days
+          in: query
+          required: false
+          description: Number of forecast days (1-16).
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Forecast data.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Forecast"
+components:
+  schemas:
+    Forecast:
+      type: object
+      description: Forecast response for one coordinate.
+      required:
+        - latitude
+        - longitude
+      properties:
+        latitude:
+          type: number
+        longitude:
+          type: number
+        timezone:
+          type: string
+        utc_offset_seconds:
+          type: integer
+        elevation:
+          type: number
+        current:
+          $ref: "#/components/schemas/CurrentWeather"
+        hourly:
+          $ref: "#/components/schemas/HourlyForecast"
+    CurrentWeather:
+      type: object
+      description: Current conditions (present when `current=` is requested).
+      required:
+        - time
+        - interval
+        - temperature_2m
+        - wind_speed_10m
+        - weather_code
+      properties:
+        time:
+          type: string
+        interval:
+          type: integer
+        temperature_2m:
+          type: number
+        wind_speed_10m:
+          type: number
+        weather_code:
+          type: integer
+    HourlyForecast:
+      type: object
+      description: Parallel arrays of hourly values (present when `hourly=` is requested).
+      required:
+        - time
+        - temperature_2m
+      properties:
+        time:
+          type: array
+          items:
+            type: string
+        temperature_2m:
+          type: array
+          items:
+            type: number

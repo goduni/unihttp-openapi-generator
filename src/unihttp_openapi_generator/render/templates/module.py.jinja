@@ -1,0 +1,9 @@
+{% if header_comment %}{{ header_comment }}
+{% endif %}
+{% if future %}from __future__ import annotations
+
+{% endif %}
+{% if imports %}{{ imports }}
+
+{% endif %}
+{{ body }}
