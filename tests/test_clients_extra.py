@@ -115,6 +115,72 @@ _BASIC_AUTH_SPEC: dict[str, Any] = {
 }
 
 
+_XQUIK_SEARCH_SPEC: dict[str, Any] = {
+    "openapi": "3.1.0",
+    "info": {"title": "Xquik API", "version": "1.0"},
+    "servers": [{"url": "https://xquik.com"}],
+    "paths": {
+        "/api/v1/x/tweets/search": {
+            "get": {
+                "operationId": "searchTweets",
+                "tags": ["x"],
+                "security": [{"apiKey": []}],
+                "parameters": [
+                    {
+                        "name": "query",
+                        "in": "query",
+                        "required": True,
+                        "schema": {"type": "string"},
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ok",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/SearchTweetsResponse"}
+                            }
+                        },
+                    }
+                },
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {"apiKey": {"type": "apiKey", "in": "header", "name": "x-api-key"}},
+        "schemas": {
+            "SearchTweetsResponse": {
+                "type": "object",
+                "required": ["data"],
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {"$ref": "#/components/schemas/Tweet"},
+                    }
+                },
+            },
+            "Tweet": {
+                "type": "object",
+                "required": ["id", "text"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "text": {"type": "string"},
+                },
+            },
+        },
+    },
+}
+
+
 def test_basic_auth_prepends_base64_import() -> None:
     out = _render(_BASIC_AUTH_SPEC, client=ClientKind.SYNC)
     assert "import base64\n" in out
+
+
+def test_lowercase_api_key_header_is_preserved() -> None:
+    out = _render(_XQUIK_SEARCH_SPEC, client=ClientKind.SYNC)
+
+    assert "DEFAULT_BASE_URL = 'https://xquik.com'" in out
+    assert "api_key: str | None = None" in out
+    assert "_mw.append(HeaderAuthSyncMiddleware('x-api-key', api_key))" in out
+    assert "search_tweets = bind_method(SearchTweets)" in out
