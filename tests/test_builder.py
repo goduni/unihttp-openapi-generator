@@ -135,6 +135,69 @@ def test_security_schemes(ir: IRDocument) -> None:
     assert ir.security_schemes["bearer"].scheme == "bearer"
 
 
+def test_xquik_search_security_and_parameters() -> None:
+    spec: dict[str, Any] = {
+        "openapi": "3.1.0",
+        "info": {"title": "Xquik API", "version": "1.0.0"},
+        "servers": [{"url": "https://xquik.com"}],
+        "paths": {
+            "/api/v1/x/tweets/search": {
+                "get": {
+                    "operationId": "searchTweets",
+                    "tags": ["x"],
+                    "security": [{"apiKey": []}, {"oauthBearer": []}, {}],
+                    "parameters": [
+                        {
+                            "name": "q",
+                            "in": "query",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "queryType",
+                            "in": "query",
+                            "schema": {
+                                "type": "string",
+                                "enum": ["Latest", "Top"],
+                                "default": "Latest",
+                            },
+                        },
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "schema": {"type": "integer", "default": 20, "maximum": 200},
+                        },
+                    ],
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+        },
+        "components": {
+            "securitySchemes": {
+                "apiKey": {"type": "apiKey", "in": "header", "name": "x-api-key"},
+                "oauthBearer": {"type": "http", "scheme": "bearer"},
+            }
+        },
+    }
+    ir = build_ir(spec, RefResolver(spec))
+    scheme = ir.security_schemes["apiKey"]
+    op = next(o for o in ir.operations if o.method_name == "search_tweets")
+    params = {p.name: p for p in op.parameters}
+
+    assert ir.base_url == "https://xquik.com"
+    assert scheme.kind == "apiKey"
+    assert scheme.location == "header"
+    assert scheme.parameter_name == "x-api-key"
+    assert op.path == "/api/v1/x/tweets/search"
+    assert op.security == [{"apiKey": []}, {"oauthBearer": []}, {}]
+    assert params["q"].location is ParamLocation.QUERY
+    assert params["q"].required is True
+    assert params["query_type"].wire_name == "queryType"
+    assert params["query_type"].needs_alias is True
+    assert params["limit"].default == 20
+    assert params["limit"].has_default is True
+
+
 # -- item 1: server selection -------------------------------------------------
 
 
