@@ -54,6 +54,7 @@ class OperationField:
     has_default: bool
     default: object
     is_factory: bool  # default needs ``field(default_factory=...)`` semantics
+    description: str | None = None  # schema prose, rendered as an attribute docstring
 
 
 def operation_fields(op: IROperation) -> list[OperationField]:
@@ -68,9 +69,12 @@ def operation_fields(op: IROperation) -> list[OperationField]:
         is_required: bool,
         has_default: bool,
         default: object,
+        description: str | None = None,
     ) -> None:
         is_factory = has_default and not is_required and isinstance(default, list | dict)
-        spec = OperationField(name, marker, inner, is_required, has_default, default, is_factory)
+        spec = OperationField(
+            name, marker, inner, is_required, has_default, default, is_factory, description
+        )
         (required if is_required else optional).append(spec)
 
     for param in op.parameters:
@@ -82,6 +86,7 @@ def operation_fields(op: IROperation) -> list[OperationField]:
             param.required,
             param.has_default,
             param.default,
+            param.description,
         )
 
     if op.body is not None:
@@ -96,7 +101,15 @@ def operation_fields(op: IROperation) -> list[OperationField]:
                     marker = "Body"
                 else:
                     marker = "Form"
-                add(f.name, marker, f.type.annotation(), f.required, f.has_default, f.default)
+                add(
+                    f.name,
+                    marker,
+                    f.type.annotation(),
+                    f.required,
+                    f.has_default,
+                    f.default,
+                    f.description,
+                )
 
     return [*required, *optional]
 
@@ -119,6 +132,11 @@ def _collect_field_lines(op: IROperation) -> tuple[list[str], set[str], bool, bo
         else:
             uses_omitted = True
             lines.append(f"{spec.py_name}: {spec.marker}[Omittable[{spec.inner}]] = Omitted()")
+        # PEP 258 attribute docstring: the only place a parameter's / body field's
+        # schema prose can land without changing the constructor signature.
+        doc = docstring(spec.description, "")
+        if doc:
+            lines.extend(doc.rstrip("\n").split("\n"))
 
     return lines, markers, uses_omitted, uses_field
 

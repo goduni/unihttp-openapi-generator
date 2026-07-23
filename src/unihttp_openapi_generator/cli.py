@@ -61,6 +61,13 @@ def generate(
         str | None,
         typer.Option("--strip-prefix", help="'auto' or a dotted prefix to drop from schema names."),
     ] = None,
+    inheritance: Annotated[
+        bool | None,
+        typer.Option(
+            "--inheritance/--no-inheritance",
+            help="Render 'allOf: [$ref]' as a base class instead of merging its fields in.",
+        ),
+    ] = None,
     check: Annotated[bool | None, typer.Option("--check/--no-check")] = None,
     config: Annotated[
         Path | None,
@@ -89,6 +96,7 @@ def generate(
         "optional": optional,
         "file_layout": file_layout,
         "strip_prefix": strip_prefix,
+        "inheritance": inheritance,
         "check": check,
     }
 

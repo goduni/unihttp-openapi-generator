@@ -71,6 +71,7 @@ class GeneratorConfig(BaseModel):
     optional: OptionalStyle = OptionalStyle.NONE
     file_layout: FileLayout = FileLayout.SINGLE
     strip_prefix: str | None = None  # "auto" or a dotted prefix to drop from schema names
+    inheritance: bool = False  # allOf: [$ref] -> a real base class instead of merged fields
     check: bool = False
 
     @model_validator(mode="after")

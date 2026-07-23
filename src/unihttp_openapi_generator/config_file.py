@@ -33,6 +33,7 @@ ALLOWED_KEYS = frozenset(
         "optional",
         "file_layout",
         "strip_prefix",
+        "inheritance",
         "check",
     }
 )

@@ -39,7 +39,13 @@ class AdaptixStrategy(SerializerStrategy):
         return any(f.has_default and isinstance(f.default, list | dict) for f in model.fields)
 
     def render_model(self, model: IRModel) -> str:
-        lines = ["@dataclass", f"class {model.name}:"]
+        # Keyword-only for the models in an inheritance hierarchy: a subclass may pin an
+        # inherited field to a default while adding required fields of its own, which
+        # the positional "defaults last" rule forbids.
+        decorator = "@dataclass(kw_only=True)" if self.is_kw_only(model) else "@dataclass"
+        base = model.base_model
+        header = f"class {model.name}({base}):" if base else f"class {model.name}:"
+        lines = [decorator, header]
         doc = docstring(model.description, "    ")
         if doc:
             lines.append(doc.rstrip("\n"))
