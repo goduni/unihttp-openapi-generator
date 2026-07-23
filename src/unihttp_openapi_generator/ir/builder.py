@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -53,6 +54,8 @@ from unihttp_openapi_generator.ir.types import (
     optional,
 )
 from unihttp_openapi_generator.refs import RefResolver
+
+logger = logging.getLogger(__name__)
 
 _HTTP_METHODS = ("get", "put", "post", "delete", "patch", "head", "options", "trace")
 
@@ -164,15 +167,28 @@ class IRBuilder:
             return declarations
         by_name = {decl.name: decl for decl in declarations}
         ordered: list[Declaration] = []
-        visited: set[str] = set()
+        done: set[str] = set()
+        on_stack: set[str] = set()
 
         def visit(decl: Declaration) -> None:
-            if decl.name in visited:
+            if decl.name in done:
                 return
-            visited.add(decl.name)  # marked first: a base cycle must not recurse forever
-            base = decl.base if isinstance(decl, IRModel) else None
+            # Grey marking: a name still on the stack means the base chain loops back
+            # on itself. Emitting either end first is wrong, so break the cycle by
+            # dropping the inheritance edge rather than emitting unresolvable code.
+            on_stack.add(decl.name)
+            base = decl.base_model if isinstance(decl, IRModel) else None
             if base is not None and base in by_name:
-                visit(by_name[base])
+                if base in on_stack:
+                    logger.warning(
+                        "inheritance cycle at %r -> %r; dropping the base class", decl.name, base
+                    )
+                    assert isinstance(decl, IRModel)
+                    decl.base_model = None
+                else:
+                    visit(by_name[base])
+            on_stack.discard(decl.name)
+            done.add(decl.name)
             ordered.append(decl)
 
         for decl in declarations:
@@ -321,14 +337,21 @@ class IRBuilder:
                 f.default = value
                 f.omittable = False
                 return
-        if decl.base is None:
+        if decl.base_model is None:
             return
         # Inheritance mode: the tag property is declared by the base class, so the
-        # subtype re-declares it pinned to its own tag.
+        # subtype re-declares it pinned to its own tag. The python name has to be
+        # reserved against the fields already on this model: a sibling property whose
+        # wire name only differs in case (``Type`` vs ``type``) snake-cases to the same
+        # identifier, and two identically named class attributes would silently
+        # collapse into one -- destroying the tag.
+        used = NameRegistry()
+        for existing in decl.fields:
+            used.reserve(existing.name)
         decl.fields.insert(
             0,
             IRField(
-                name=field_name(prop),
+                name=used.reserve(field_name(prop)),
                 wire_name=prop,
                 type=LiteralType((value,)),
                 required=True,
@@ -349,14 +372,20 @@ class IRBuilder:
             return
         disc_raw = schema.get("discriminator")
         if isinstance(disc_raw, dict) and isinstance(disc_raw.get("mapping"), dict):
-            if self._inheritance:
+            # ``_is_object`` is the load-bearing guard: only a base that declares its
+            # own structure can *be* a class. The common OpenAPI idiom puts the
+            # discriminator on a bare ``oneOf`` holder that has no properties of its
+            # own -- turning that into a class would emit an empty ``class Base: pass``
+            # and silently swallow every payload annotated with it, so it stays a union
+            # alias even in inheritance mode.
+            if self._inheritance and self._is_object(schema):
                 # The base keeps its own properties and stays a class; subtypes
                 # inherit from it instead of being folded into a union alias. It is
                 # declared *before* they are converted, so their own `_build_object`
                 # can see that their base resolves to a model.
                 model = self._build_object(name, schema, base_uri)
                 self._declarations[name] = model
-                self._build_mapped_subtypes(disc_raw["mapping"], base_uri, name)
+                self._convert_mapped_subtypes(disc_raw["mapping"], base_uri, name)
                 # Re-resolve now that every mapped subtype has a class name.
                 model.discriminator = self._discriminator(schema, base_uri)
                 return
@@ -382,17 +411,23 @@ class IRBuilder:
         target = self._convert(schema, base_uri, name)
         self._declarations[name] = IRAlias(name=name, target=target, description=description)
 
-    def _build_mapped_subtypes(self, mapping: dict[str, Any], base_uri: str, hint: str) -> None:
-        """Force-declare every subtype named in a discriminator ``mapping``.
+    def _convert_mapped_subtypes(
+        self, mapping: dict[str, Any], base_uri: str, hint: str
+    ) -> list[IRType]:
+        """Convert every subtype named in a discriminator ``mapping``, in mapping order.
 
-        Without the union alias nothing else pulls a subtype in, so an unreferenced
-        variant would silently vanish from the output. Converting them before the
-        base is built also lets ``_discriminator`` resolve the mapping to class names.
+        Shared by both discriminated-base strategies. In union mode the results are the
+        union members; in inheritance mode they are discarded and this runs purely for
+        its side effect -- without the union alias nothing else pulls a subtype in, so
+        an unreferenced variant would silently vanish from the output. Either way the
+        conversion also populates ``_ref_to_name`` so ``_discriminator`` can resolve the
+        mapping to generated class names.
         """
-        for target in mapping.values():
-            ref = self._mapping_ref(target)
-            if ref is not None:
-                self._convert_ref(ref, base_uri, hint)
+        return [
+            self._convert_ref(ref, base_uri, hint)
+            for target in mapping.values()
+            if (ref := self._mapping_ref(target)) is not None
+        ]
 
     def _build_discriminated_base(
         self, name: str, schema: dict[str, Any], base_uri: str, description: str | None
@@ -401,11 +436,7 @@ class IRBuilder:
         mapping = schema["discriminator"]["mapping"]
         members: list[IRType] = []
         seen: set[str] = set()
-        for target in mapping.values():
-            ref = self._mapping_ref(target)
-            if ref is None:
-                continue
-            ir = self._convert_ref(ref, base_uri, name)
+        for ir in self._convert_mapped_subtypes(mapping, base_uri, name):
             anno = ir.annotation()
             if anno not in seen:
                 seen.add(anno)
@@ -571,13 +602,19 @@ class IRBuilder:
         return RefType(name)
 
     def _flatten_object(
-        self, schema: dict[str, Any], base_uri: str, *, keep_base: bool = False
+        self, schema: dict[str, Any], base_uri: str, *, inherited: dict[str, Any] | None = None
     ) -> tuple[dict[str, tuple[Any, str]], set[str], Any, Discriminator | None]:
+        """Merge an ``allOf`` chain into one property set.
+
+        ``inherited`` is the single ``allOf`` member the caller already turned into a
+        real base class (inheritance mode); its properties stay on the base instead of
+        being copied down. It is passed in rather than recomputed so the caller's
+        decision and this merge can never disagree.
+        """
         properties: dict[str, tuple[Any, str]] = {}
         required: set[str] = set()
         additional: Any = None
         discriminator = self._discriminator(schema, base_uri)
-        inherited = self._inherited_ref(schema) if keep_base else None
         for sub in schema.get("allOf", []):
             sub_schema, sub_base = self._deref(sub, base_uri)
             if not isinstance(sub_schema, dict):
@@ -620,36 +657,135 @@ class IRBuilder:
         ]
         return refs[0] if len(refs) == 1 else None
 
+    def _resolve_base_model(
+        self, inherited: dict[str, Any], base_uri: str, hint: str
+    ) -> str | None:
+        """Generated class name to subclass for an ``allOf`` ref, or None to merge.
+
+        Only a model can be subclassed, so a ref to an enum/alias/scalar keeps the merge
+        behaviour. The check cannot go through ``self._declarations``: a base whose own
+        body refers back to this subtype (a recursive hierarchy) is still mid-build and
+        has no entry yet, which would silently downgrade the subtype to a merge based on
+        nothing but graph traversal order. Decide from the *schema* instead, using the
+        same predicate ``_build_named`` will apply when it declares the base.
+        """
+        base_type = self._convert_ref(inherited["$ref"], base_uri, hint)
+        if not isinstance(base_type, RefType):
+            return None
+        declared = self._declarations.get(base_type.name)
+        if declared is not None:
+            return base_type.name if isinstance(declared, IRModel) else None
+        resolved = self._resolver.resolve_ref(inherited["$ref"], base_uri)
+        key = (resolved.base_uri, resolved.pointer)
+        will_be_model = self._declares_model(
+            resolved.value, is_disc_subtype=key in self._disc_subtype
+        )
+        return base_type.name if will_be_model else None
+
+    def _declares_model(self, schema: Any, *, is_disc_subtype: bool = False) -> bool:
+        """Whether ``_build_named`` will declare ``schema`` as an ``IRModel``.
+
+        Mirrors the dispatch in ``_build_named``; kept next to nothing else so the two
+        stay reviewable side by side.
+        """
+        if not isinstance(schema, dict):
+            return False
+        if "enum" in schema and "properties" not in schema:
+            return False
+        disc = schema.get("discriminator")
+        if isinstance(disc, dict) and isinstance(disc.get("mapping"), dict):
+            return self._inheritance and self._is_object(schema)
+        if is_disc_subtype and "allOf" in schema:
+            return True
+        return self._is_object(schema)
+
     def _build_object(self, name: str, schema: dict[str, Any], base_uri: str) -> IRModel:
         base: str | None = None
-        if self._inheritance:
-            inherited = self._inherited_ref(schema)
-            if inherited is not None:
-                base_type = self._convert_ref(inherited["$ref"], base_uri, name)
-                # Only a model can be subclassed; a ref to an enum/alias is still merged.
-                if isinstance(base_type, RefType) and isinstance(
-                    self._declarations.get(base_type.name), IRModel
-                ):
-                    base = base_type.name
+        inherited = self._inherited_ref(schema) if self._inheritance else None
+        if inherited is not None:
+            base = self._resolve_base_model(inherited, base_uri, name)
         properties, required, additional, discriminator = self._flatten_object(
-            schema, base_uri, keep_base=base is not None
+            schema, base_uri, inherited=inherited if base is not None else None
         )
         model = IRModel(
             name=name,
             description=schema.get("description"),
             discriminator=discriminator,
-            base=base,
+            base_model=base,
         )
         field_names = NameRegistry()
         for prop_name, (prop_schema, prop_base) in properties.items():
             f = self._build_field(name, prop_name, prop_schema, prop_base, prop_name in required)
             f.name = field_names.reserve(f.name)  # distinct wire names can collapse (e.g. +1/-1)
             model.fields.append(f)
+        if base is not None:
+            self._drop_unsafe_overrides(model, base)
         if isinstance(additional, dict):
             model.additional_properties = self._convert(additional, base_uri, name + "Value")
         elif additional is True:
             model.additional_properties = ANY
         return model
+
+    def _drop_unsafe_overrides(self, model: IRModel, base: str) -> None:
+        """Remove re-declared inherited fields that would not type-check as overrides.
+
+        Specs routinely restate a base property in a subtype just to attach prose, or to
+        relax it to nullable. Re-emitting those produces ``class Sub(Base)`` with an
+        attribute whose type is not a subtype of the base's, which ``mypy --strict``
+        rejects outright (``Incompatible types in assignment``). The base's declaration
+        already covers the field, so anything that is not a genuine narrowing is
+        dropped and simply inherited.
+        """
+        parent = self._declarations.get(base)
+        if not isinstance(parent, IRModel):
+            return
+        inherited_types = {f.wire_name: f.type for f in parent.fields}
+        kept: list[IRField] = []
+        for f in model.fields:
+            base_type = inherited_types.get(f.wire_name)
+            if base_type is None or self._is_narrowing(f.type, base_type):
+                kept.append(f)
+            else:
+                logger.debug(
+                    "%s.%s re-declares %s.%s incompatibly (%s vs %s); inheriting instead",
+                    model.name,
+                    f.name,
+                    base,
+                    f.wire_name,
+                    f.type.annotation(),
+                    base_type.annotation(),
+                )
+        model.fields = kept
+
+    @classmethod
+    def _is_narrowing(cls, sub: IRType, base: IRType) -> bool:
+        """Whether ``sub`` is safe to re-declare over an inherited ``base`` annotation.
+
+        Deliberately conservative: it only says yes for the shapes that are provably
+        assignable, because a false yes emits code that fails ``mypy --strict`` while a
+        false no merely inherits a slightly less precise type.
+        """
+        if sub.annotation() == base.annotation():
+            return False  # a pure restatement: nothing to gain, just inherit it
+        if isinstance(base, PrimitiveType) and base.py == "Any":
+            return True
+        if isinstance(base, OptionalType):
+            # ``T | None`` admits ``T`` and anything that narrows ``T``.
+            return sub.annotation() == base.inner.annotation() or cls._is_narrowing(sub, base.inner)
+        if isinstance(sub, OptionalType):
+            return False  # adding None to a non-optional base widens it
+        if isinstance(sub, LiteralType):
+            # The discriminator-tag case: Literal["a"] over a str/int base, or over a
+            # wider Literal that already admits every value.
+            if isinstance(base, LiteralType):
+                return set(sub.values) <= set(base.values)
+            return isinstance(base, PrimitiveType) and base.py in ("str", "int", "bool")
+        if isinstance(base, UnionType):
+            return any(
+                cls._is_narrowing(sub, m) or sub.annotation() == m.annotation()
+                for m in base.members
+            )
+        return False
 
     @staticmethod
     def _default_assignable(default: Any, ftype: IRType) -> bool:

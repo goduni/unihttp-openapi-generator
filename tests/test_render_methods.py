@@ -140,3 +140,57 @@ def test_blank_line_between_dunders_and_params(sample_spec: dict[str, Any]) -> N
     source = format_python(render_methods_module(ir, "pets", "acme"), filename="pets.py")
     # methods with parameters get a blank line after __method__
     assert '__method__ = "GET"\n\n    x_request_id' in source
+
+
+def test_body_field_and_param_descriptions_become_attribute_docstrings() -> None:
+    """Schema prose on a parameter / spread body field has to land somewhere.
+
+    ``IRBodyField.description`` and ``IRParameter.description`` are only worth carrying
+    if they reach the generated package; a PEP 258 attribute docstring is the one place
+    they fit without touching the constructor signature.
+    """
+    spec: dict[str, Any] = {
+        "openapi": "3.1.0",
+        "info": {"title": "S", "version": "1.0.0"},
+        "paths": {
+            "/d": {
+                "post": {
+                    "operationId": "createDoc",
+                    "tags": ["d"],
+                    "parameters": [
+                        {
+                            "name": "dry_run",
+                            "in": "query",
+                            "schema": {"type": "boolean"},
+                            "description": "Validate without persisting.",
+                        }
+                    ],
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["title"],
+                                    "properties": {
+                                        "title": {
+                                            "type": "string",
+                                            "description": "Document title.",
+                                        },
+                                        "body": {"type": "string"},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {"204": {"description": "no content"}},
+                }
+            }
+        },
+    }
+    ir = build_ir(spec, RefResolver(spec))
+    source = format_python(render_methods_module(ir, "d", "pkg"), filename="d.py")
+    assert '"""Document title."""' in source
+    assert '"""Validate without persisting."""' in source
+    # a field without prose gets no stray docstring
+    assert source.count('"""') == 2 * 3  # module docstring + the two attribute ones

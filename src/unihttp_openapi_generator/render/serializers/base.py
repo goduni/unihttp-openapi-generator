@@ -9,7 +9,13 @@ from typing import Any
 
 from unihttp_openapi_generator.config import Serializer
 from unihttp_openapi_generator.ir.document import IRDocument
-from unihttp_openapi_generator.ir.models import Declaration, IRAlias, IREnum, IRModel
+from unihttp_openapi_generator.ir.models import (
+    Declaration,
+    Discriminator,
+    IRAlias,
+    IREnum,
+    IRModel,
+)
 from unihttp_openapi_generator.ir.types import Import
 
 # Generated packages ship without a ``[tool.ruff]`` table, so ruff lints them with
@@ -72,17 +78,28 @@ class SerializerStrategy(ABC):
         # strategies that need to inspect sibling models (e.g. pydantic
         # discriminated unions). Empty unless a document context is bound.
         self.models_by_name: dict[str, IRModel] = {}
-        # Whether any model in the bound document inherits from another. Model
-        # constructors then become keyword-only: a subclass may pin an inherited
-        # field to a default (a discriminator tag) while declaring required fields
-        # of its own, which positional ordering cannot express.
-        self.uses_inheritance = False
+        # Names of the models that take part in an inheritance hierarchy (as a base or
+        # as a subclass). Only these need keyword-only constructors -- a subclass may
+        # pin an inherited field to a default (a discriminator tag) while declaring
+        # required fields of its own, which positional ordering cannot express. Models
+        # outside every hierarchy keep positional construction so one `allOf` subtype
+        # in a spec does not silently break the constructor of every other model.
+        self._kw_only_models: frozenset[str] = frozenset()
 
     def bind_document(self, doc: IRDocument) -> None:
         self.models_by_name = {
             decl.name: decl for decl in doc.declarations if isinstance(decl, IRModel)
         }
-        self.uses_inheritance = any(model.base for model in self.models_by_name.values())
+        hierarchy: set[str] = set()
+        for model in self.models_by_name.values():
+            if model.base_model is not None:
+                hierarchy.add(model.name)
+                hierarchy.add(model.base_model)
+        self._kw_only_models = frozenset(hierarchy)
+
+    def is_kw_only(self, model: IRModel) -> bool:
+        """Whether ``model``'s constructor must be keyword-only (see ``bind_document``)."""
+        return model.name in self._kw_only_models
 
     # -- imports ---------------------------------------------------------------
 
@@ -105,7 +122,22 @@ class SerializerStrategy(ABC):
             return self.render_enum(decl)
         if isinstance(decl, IRAlias):
             return self.render_alias(decl)
-        return self.render_model(decl)
+        body = self.render_model(decl)
+        if decl.discriminator is not None:
+            # A discriminated base kept as a class (inheritance mode). No serializer
+            # resolves a subtype from a base-class annotation on its own, so surface
+            # the mapping instead of dropping it: it is what a reader needs to wire
+            # tagged decoding by hand.
+            body = f"{self._discriminator_comment(decl.discriminator)}\n{body}"
+        return body
+
+    @staticmethod
+    def _discriminator_comment(disc: Discriminator) -> str:
+        mapping = ", ".join(f"{value}={name}" for value, name in sorted(disc.mapping.items()))
+        note = f"# discriminator: {disc.property_name}"
+        if mapping:
+            note += f" ({mapping})"
+        return f"{note}\n# subtype resolution is left to the serializer config"
 
     # -- shared renderers ------------------------------------------------------
 

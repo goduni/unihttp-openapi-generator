@@ -93,7 +93,7 @@ def render_declaration_module(
     # TYPE_CHECKING block (and ``from __future__ import annotations`` keeps the
     # annotations lazy). Stdlib/typing/serializer imports stay at runtime.
     imports = {imp for imp in imports if imp.name not in plan.model_modules}
-    base = decl.base if isinstance(decl, IRModel) else None
+    base = decl.base_model if isinstance(decl, IRModel) else None
     if base is not None and base in plan.model_modules:
         imports.add(Import(plan.model_dotted(package, base), base))
         refs = refs - {base}

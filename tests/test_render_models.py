@@ -375,9 +375,7 @@ _INHERITED_SPEC: dict[str, Any] = {
 )
 def test_inherited_models_subclass_their_base(serializer: Serializer, tmp_path: Path) -> None:
     ir = build_ir(_INHERITED_SPEC, RefResolver(_INHERITED_SPEC), inheritance=True)
-    source = format_python(
-        render_models_module(ir, get_strategy(serializer)), filename="models.py"
-    )
+    source = format_python(render_models_module(ir, get_strategy(serializer)), filename="models.py")
     assert "class CallbackButton(Button" in source
     module = _load(source, tmp_path, f"genmodels_inherit_{serializer.value}")
     assert issubclass(module.CallbackButton, module.Button)
@@ -391,11 +389,51 @@ def test_inherited_models_subclass_their_base(serializer: Serializer, tmp_path: 
 def test_inherited_adaptix_models_are_kw_only() -> None:
     ir = build_ir(_INHERITED_SPEC, RefResolver(_INHERITED_SPEC), inheritance=True)
     source = render_models_module(ir, get_strategy(Serializer.ADAPTIX))
-    assert "@dataclass(kw_only=True)" in source
-    assert "@dataclass\n" not in source
+    assert "@dataclass(kw_only=True)\nclass Button:" in source
+    assert "@dataclass(kw_only=True)\nclass CallbackButton(Button):" in source
+
+
+def test_only_hierarchy_members_become_kw_only() -> None:
+    """One ``allOf`` subtype must not silently break every other model's constructor.
+
+    ``kw_only`` is what lets a subclass pin an inherited field to a default while
+    adding required fields of its own -- a constraint that exists only inside a
+    hierarchy. Models outside one keep positional construction.
+    """
+    spec: dict[str, Any] = {
+        "openapi": "3.0.0",
+        "info": {"title": "I", "version": "1.0.0"},
+        "paths": {},
+        "components": {
+            "schemas": {
+                **_INHERITED_SPEC["components"]["schemas"],
+                "Unrelated": {
+                    "type": "object",
+                    "required": ["n"],
+                    "properties": {"n": {"type": "string"}},
+                },
+            }
+        },
+    }
+    ir = build_ir(spec, RefResolver(spec), inheritance=True)
+    source = render_models_module(ir, get_strategy(Serializer.ADAPTIX))
+    assert "@dataclass\nclass Unrelated:" in source
+    assert "@dataclass(kw_only=True)\nclass Button:" in source
 
 
 def test_models_without_inheritance_keep_positional_dataclasses() -> None:
     ir = build_ir(_INHERITED_SPEC, RefResolver(_INHERITED_SPEC))
     source = render_models_module(ir, get_strategy(Serializer.ADAPTIX))
     assert "@dataclass(kw_only=True)" not in source
+
+
+def test_discriminated_base_class_keeps_its_mapping_visible() -> None:
+    """A base kept as a class must not swallow the discriminator it declares.
+
+    No serializer resolves a concrete subtype from a base-class annotation on its own,
+    so the mapping is the one thing a reader needs to wire tagged decoding by hand.
+    Dropping it would leave that information nowhere in the generated package.
+    """
+    ir = build_ir(_INHERITED_SPEC, RefResolver(_INHERITED_SPEC), inheritance=True)
+    source = render_models_module(ir, get_strategy(Serializer.ADAPTIX))
+    assert "# discriminator: type (callback=CallbackButton)" in source

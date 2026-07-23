@@ -767,23 +767,85 @@ def inherited() -> IRDocument:
 def test_inheritance_keeps_parent_fields_on_parent(inherited: IRDocument) -> None:
     base = _decl(inherited, "Button")
     assert isinstance(base, IRModel)
-    assert base.base is None
+    assert base.base_model is None
     assert [f.name for f in base.fields] == ["type", "text"]
 
     sub = _decl(inherited, "CallbackButton")
-    assert sub.base == "Button"
-    # own fields only: the restated ``text``, the new ``payload``, and the pinned tag
-    assert {f.name for f in sub.fields} == {"type", "text", "payload"}
+    assert sub.base_model == "Button"
+    # own fields only: the new ``payload`` and the pinned tag. ``text`` is restated by
+    # the spec purely to attach prose, so it is inherited rather than re-declared.
+    assert {f.name for f in sub.fields} == {"type", "payload"}
 
 
-def test_inheritance_restated_field_keeps_parent_required(inherited: IRDocument) -> None:
+def test_inheritance_drops_redundant_restatement(inherited: IRDocument) -> None:
+    # ``CallbackButton`` restates ``text`` only to add a description. Re-emitting it
+    # would put ``text: str`` on the subclass shadowing an identical base attribute --
+    # noise at best, and a mypy ``[assignment]`` error as soon as the restatement
+    # differs at all (see ``test_inheritance_drops_widening_restatement``).
     sub = _decl(inherited, "CallbackButton")
-    text = next(f for f in sub.fields if f.name == "text")
-    # ``required`` comes from Button; without it the field would widen to `str | None`
-    # and violate the base's declaration.
+    assert "text" not in {f.name for f in sub.fields}
+    base = _decl(inherited, "Button")
+    assert isinstance(base, IRModel)
+    text = next(f for f in base.fields if f.name == "text")
     assert text.required is True
     assert text.type.annotation() == "str"
-    assert text.description == "Visible label."
+
+
+def test_inheritance_drops_widening_restatement() -> None:
+    """A subtype relaxing an inherited field must not emit an unsound override.
+
+    ``class C(P)`` with ``v: str | None`` over ``v: str`` is rejected by
+    ``mypy --strict``, so the subtype inherits the base's declaration instead.
+    """
+    spec: dict[str, Any] = {
+        "openapi": "3.1.0",
+        "info": {"title": "S", "version": "1.0.0"},
+        "paths": {},
+        "components": {
+            "schemas": {
+                "P": {"type": "object", "required": ["v"], "properties": {"v": {"type": "string"}}},
+                "C": {
+                    "allOf": [
+                        {"$ref": "#/components/schemas/P"},
+                        {"properties": {"v": {"type": "string", "nullable": True}}},
+                    ]
+                },
+            }
+        },
+    }
+    ir = build_ir(spec, RefResolver(spec), inheritance=True)
+    sub = _decl(ir, "C")
+    assert isinstance(sub, IRModel)
+    assert sub.base_model == "P"
+    assert sub.fields == []
+
+
+def test_inheritance_keeps_narrowing_restatement() -> None:
+    """A genuine narrowing (``Literal`` over ``str``) is a sound override, so it stays."""
+    spec: dict[str, Any] = {
+        "openapi": "3.1.0",
+        "info": {"title": "S", "version": "1.0.0"},
+        "paths": {},
+        "components": {
+            "schemas": {
+                "P": {
+                    "type": "object",
+                    "required": ["k"],
+                    "properties": {"k": {"type": "string"}},
+                },
+                "C": {
+                    "allOf": [
+                        {"$ref": "#/components/schemas/P"},
+                        {"required": ["k"], "properties": {"k": {"enum": ["one", "two"]}}},
+                    ]
+                },
+            }
+        },
+    }
+    ir = build_ir(spec, RefResolver(spec), inheritance=True)
+    sub = _decl(ir, "C")
+    assert isinstance(sub, IRModel)
+    assert [f.type.annotation() for f in sub.fields] == ["Literal['one', 'two']"]
 
 
 def test_inheritance_pins_discriminator_tag(inherited: IRDocument) -> None:
@@ -797,7 +859,7 @@ def test_inheritance_pins_discriminator_tag(inherited: IRDocument) -> None:
 def test_inheritance_keeps_marker_subtype_as_class(inherited: IRDocument) -> None:
     marker = _decl(inherited, "LinkButton")
     assert isinstance(marker, IRModel)
-    assert marker.base == "Button"
+    assert marker.base_model == "Button"
     assert [f.name for f in marker.fields] == ["type"]
 
 
@@ -827,7 +889,7 @@ def test_inheritance_orders_bases_before_subclasses(inherited: IRDocument) -> No
 
 def test_inheritance_plain_allof_ref_becomes_base(inherited: IRDocument) -> None:
     sub = _decl(inherited, "NamedOwner")
-    assert sub.base == "Owner"
+    assert sub.base_model == "Owner"
     assert [f.name for f in sub.fields] == ["name"]
     assert sub.referenced_models() == {"Owner"}
 
@@ -835,7 +897,7 @@ def test_inheritance_plain_allof_ref_becomes_base(inherited: IRDocument) -> None
 def test_inheritance_multiple_refs_still_merge(inherited: IRDocument) -> None:
     # Two `$ref`s give no single parent to pick, so the merge behaviour is kept.
     mixed = _decl(inherited, "Mixed")
-    assert mixed.base is None
+    assert mixed.base_model is None
     assert {f.name for f in mixed.fields} == {"id", "type", "text"}
 
 
@@ -844,7 +906,139 @@ def test_without_inheritance_parent_fields_are_merged() -> None:
     ir = build_ir(spec, RefResolver(spec))
     sub = _decl(ir, "CallbackButton")
     assert isinstance(sub, IRModel)
-    assert sub.base is None
+    assert sub.base_model is None
     assert {f.name for f in sub.fields} == {"type", "text", "payload"}
     # the discriminated base collapses into a union alias, as before
     assert isinstance(_decl(ir, "Button"), IRAlias)
+
+
+def test_inheritance_oneof_discriminator_base_stays_a_union() -> None:
+    """The common polymorphism idiom must not be turned into an empty class.
+
+    ``{oneOf: [...], discriminator: {mapping}}`` declares no properties of its own, so
+    there is nothing to inherit. Rendering it as ``class Button`` would emit an empty
+    class and every ``list[Button]`` payload would decode into it, silently dropping
+    each variant's fields -- so it stays a union alias even in inheritance mode.
+    """
+    spec: dict[str, Any] = {
+        "openapi": "3.0.0",
+        "info": {"title": "S", "version": "1.0.0"},
+        "paths": {},
+        "components": {
+            "schemas": {
+                "Button": {
+                    "oneOf": [
+                        {"$ref": "#/components/schemas/CallbackButton"},
+                        {"$ref": "#/components/schemas/LinkButton"},
+                    ],
+                    "discriminator": {
+                        "propertyName": "type",
+                        "mapping": {
+                            "callback": "#/components/schemas/CallbackButton",
+                            "link": "#/components/schemas/LinkButton",
+                        },
+                    },
+                },
+                "ButtonBase": {
+                    "type": "object",
+                    "required": ["type", "text"],
+                    "properties": {"type": {"type": "string"}, "text": {"type": "string"}},
+                },
+                "CallbackButton": {
+                    "allOf": [
+                        {"$ref": "#/components/schemas/ButtonBase"},
+                        {"required": ["payload"], "properties": {"payload": {"type": "string"}}},
+                    ]
+                },
+                "LinkButton": {
+                    "allOf": [
+                        {"$ref": "#/components/schemas/ButtonBase"},
+                        {"required": ["url"], "properties": {"url": {"type": "string"}}},
+                    ]
+                },
+            }
+        },
+    }
+    ir = build_ir(spec, RefResolver(spec), inheritance=True)
+    button = _decl(ir, "Button")
+    assert isinstance(button, IRAlias)
+    assert button.target.annotation() == "CallbackButton | LinkButton"
+    # the real base of the family is still turned into a superclass
+    assert _decl(ir, "CallbackButton").base_model == "ButtonBase"
+    assert _decl(ir, "LinkButton").base_model == "ButtonBase"
+
+
+def test_inheritance_recursive_base_still_subclasses() -> None:
+    """Inheritance must not depend on the order the schema graph happens to be walked.
+
+    ``Node`` is built first and reaches ``LeafNode`` through its own ``child`` property,
+    so ``LeafNode`` resolves its base while ``Node`` has no ``_declarations`` entry yet.
+    Deciding from the schema (not from the half-built registry) keeps it a subclass.
+    """
+    spec: dict[str, Any] = {
+        "openapi": "3.1.0",
+        "info": {"title": "S", "version": "1.0.0"},
+        "paths": {},
+        "components": {
+            "schemas": {
+                "Node": {
+                    "type": "object",
+                    "required": ["id"],
+                    "properties": {
+                        "id": {"type": "string"},
+                        "child": {"$ref": "#/components/schemas/LeafNode"},
+                    },
+                },
+                "LeafNode": {
+                    "allOf": [
+                        {"$ref": "#/components/schemas/Node"},
+                        {"properties": {"value": {"type": "string"}}},
+                    ]
+                },
+            }
+        },
+    }
+    ir = build_ir(spec, RefResolver(spec), inheritance=True)
+    leaf = _decl(ir, "LeafNode")
+    assert leaf.base_model == "Node"
+    assert [f.name for f in leaf.fields] == ["value"]  # not a copy of Node's fields
+
+
+def test_inheritance_tag_field_never_collides_with_a_sibling() -> None:
+    """The pinned tag needs its own python name, not one already taken on the subtype.
+
+    ``Type`` and ``type`` snake-case to the same identifier. Emitting both unqualified
+    would put two identical attribute names in one class body: the later wins and the
+    discriminator tag is silently destroyed.
+    """
+    spec: dict[str, Any] = {
+        "openapi": "3.0.0",
+        "info": {"title": "S", "version": "1.0.0"},
+        "paths": {},
+        "components": {
+            "schemas": {
+                "B": {
+                    "type": "object",
+                    "required": ["type"],
+                    "properties": {"type": {"type": "string"}},
+                    "discriminator": {
+                        "propertyName": "type",
+                        "mapping": {"a": "#/components/schemas/A"},
+                    },
+                },
+                "A": {
+                    "allOf": [
+                        {"$ref": "#/components/schemas/B"},
+                        {"properties": {"Type": {"type": "integer"}}},
+                    ]
+                },
+            }
+        },
+    }
+    ir = build_ir(spec, RefResolver(spec), inheritance=True)
+    sub = _decl(ir, "A")
+    names = [f.name for f in sub.fields]
+    assert len(names) == len(set(names)), f"duplicate class attributes: {names}"
+    tag = next(f for f in sub.fields if f.wire_name == "type")
+    assert tag.type == LiteralType(("a",))
+    assert tag.needs_alias is True  # renamed, so the wire name is restored by an alias

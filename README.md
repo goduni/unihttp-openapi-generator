@@ -373,12 +373,33 @@ What to do with `allOf: [{$ref: Base}, ...]`.
       payload: str
       type: Literal['callback'] = 'callback'
   ```
-  Annotations then refer to the base (`list[Button]`) and `isinstance` works across
-  the hierarchy. Model constructors become keyword-only: a subclass may pin an
-  inherited field to a default while adding required fields of its own, which
-  positional ordering cannot express. Only an `allOf` with exactly one `$ref` maps
-  onto a base class — several refs are mixin-style composition with no single parent
-  to pick, so those keep the merge behaviour.
+  `isinstance` then works across the hierarchy, and a subtype's own properties stay in
+  one place instead of being copied into every variant.
+
+  Scope and rules:
+
+  - Only an `allOf` with exactly **one** `$ref` maps onto a base class — several refs
+    are mixin-style composition with no single parent to pick, so those keep the merge
+    behaviour. So does a `$ref` to an enum or a non-object schema.
+  - Only a base that declares **its own properties** becomes a class. The usual
+    polymorphism idiom puts the discriminator on a bare `oneOf` holder that has no
+    properties at all; there is nothing to inherit from it, so it stays a union alias
+    (`type Button = CallbackButton | LinkButton`) and keeps decoding into the concrete
+    variant. `--inheritance` only changes how the subtypes get *their* shared fields.
+  - Constructors become keyword-only **for the models in a hierarchy** — a subclass may
+    pin an inherited field to a default while adding required fields of its own, which
+    positional ordering cannot express. Models outside every hierarchy are untouched.
+  - A subtype that restates an inherited property just to attach prose, or to relax it
+    to nullable, simply **inherits** it: re-declaring `v: str | None` over the base's
+    `v: str` is rejected by `mypy --strict`. Genuine narrowings (a `Literal` tag over a
+    `str`) are kept.
+
+  One thing to know: when a discriminated base *does* stay a class, no serializer
+  resolves the concrete subtype from a base-class annotation on its own — a field typed
+  `Button` decodes into `Button`. The generated class carries a
+  `# discriminator: type (callback=CallbackButton, ...)` comment with the mapping so
+  the tagged decoding can be wired in `_serialization.py`. Leave `--inheritance` off if
+  you want polymorphic responses to parse into subtypes out of the box.
 
 ## OpenAPI coverage
 
