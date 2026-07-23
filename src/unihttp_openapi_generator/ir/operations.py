@@ -46,6 +46,7 @@ class IRBodyField:
     wire_name: str
     type: IRType
     required: bool
+    description: str | None = None
     is_file: bool = False
     default: Any = None
     has_default: bool = False

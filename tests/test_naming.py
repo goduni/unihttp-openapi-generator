@@ -47,6 +47,16 @@ def test_field_name_handles_keyword() -> None:
     assert field_name("for") == "for_"
 
 
+def test_field_name_keeps_soft_keywords() -> None:
+    # Soft keywords are legal identifiers; ``type`` in particular is a very common
+    # spec field name and suffixing it would be pure noise.
+    assert field_name("type") == "type"
+    assert field_name("match") == "match"
+    assert field_name("case") == "case"
+    # ``_`` reads as a throwaway name, so it stays reserved.
+    assert field_name("_") == "__"
+
+
 def test_field_name_handles_leading_digit() -> None:
     assert field_name("2fa") == "_2fa"
 

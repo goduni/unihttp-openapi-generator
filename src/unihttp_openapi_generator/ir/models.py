@@ -47,6 +47,13 @@ class IRModel:
     description: str | None = None
     additional_properties: IRType | None = None
     discriminator: Discriminator | None = None
+    base: str | None = None
+    """Name of the model this one inherits from (inheritance mode only).
+
+    Set when the schema is ``allOf: [{$ref: Base}, ...]`` and the builder ran with
+    ``inheritance=True``; ``fields`` then holds only this model's *own* properties.
+    Without that flag the base's properties are merged in and ``base`` stays None.
+    """
 
     def imports(self) -> set[Import]:
         imports: set[Import] = set()
@@ -62,6 +69,8 @@ class IRModel:
             names |= f.type.referenced_models()
         if self.additional_properties is not None:
             names |= self.additional_properties.referenced_models()
+        if self.base is not None:
+            names.add(self.base)
         return names - {self.name}
 
 

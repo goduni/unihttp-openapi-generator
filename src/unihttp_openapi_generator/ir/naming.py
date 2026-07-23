@@ -9,6 +9,12 @@ _WORD_BOUNDARY = re.compile(r"[^0-9a-zA-Z]+")
 _LOWER_UPPER = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _UPPER_RUN = re.compile(r"(?<=[A-Z])(?=[A-Z][a-z])")
 
+# Soft keywords (``type``, ``match``, ``case``, ``_``) are legal identifiers, and a
+# spec field named ``type`` is common enough that suffixing it would be noise. Only
+# ``_`` is reserved: it is conventionally a throwaway name and reads as a bug in a
+# field/parameter position.
+_RESERVED_SOFT_KEYWORDS = frozenset({"_"})
+
 
 def _split_words(name: str) -> list[str]:
     spaced = _WORD_BOUNDARY.sub(" ", name)
@@ -34,7 +40,7 @@ def sanitize_identifier(name: str, *, fallback: str = "field") -> str:
         candidate = _WORD_BOUNDARY.sub("_", candidate).strip("_") or fallback
     if candidate and candidate[0].isdigit():
         candidate = f"_{candidate}"
-    if keyword.iskeyword(candidate) or keyword.issoftkeyword(candidate):
+    if keyword.iskeyword(candidate) or candidate in _RESERVED_SOFT_KEYWORDS:
         candidate = f"{candidate}_"
     return candidate
 

@@ -148,7 +148,7 @@ class PydanticStrategy(SerializerStrategy):
         return safe
 
     def render_model(self, model: IRModel) -> str:
-        lines = [f"class {model.name}(BaseModel):"]
+        lines = [f"class {model.name}({model.base or 'BaseModel'}):"]
         doc = docstring(model.description, "    ")
         if doc:
             lines.append(doc.rstrip("\n"))

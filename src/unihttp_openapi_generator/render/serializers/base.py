@@ -72,11 +72,17 @@ class SerializerStrategy(ABC):
         # strategies that need to inspect sibling models (e.g. pydantic
         # discriminated unions). Empty unless a document context is bound.
         self.models_by_name: dict[str, IRModel] = {}
+        # Whether any model in the bound document inherits from another. Model
+        # constructors then become keyword-only: a subclass may pin an inherited
+        # field to a default (a discriminator tag) while declaring required fields
+        # of its own, which positional ordering cannot express.
+        self.uses_inheritance = False
 
     def bind_document(self, doc: IRDocument) -> None:
         self.models_by_name = {
             decl.name: decl for decl in doc.declarations if isinstance(decl, IRModel)
         }
+        self.uses_inheritance = any(model.base for model in self.models_by_name.values())
 
     # -- imports ---------------------------------------------------------------
 

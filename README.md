@@ -204,6 +204,7 @@ unihttp-openapi-generator generate SPEC [options]
 | `--style` | `declarative` · `imperative` (`declarative`) |
 | `--optional` | `none` · `omitted` (`none`) — `omitted` distinguishes absent from null (adaptix) |
 | `--strip-prefix` | `auto` or a dotted prefix to drop from schema names (e.g. `io.k8s.api.core.v1.Pod` → `CoreV1Pod`) |
+| `--inheritance` | off by default — render `allOf: [$ref]` as a base class instead of merging its fields in |
 | `--check` | run `ruff` and `mypy --strict` on the output |
 | `--config` | TOML config file |
 
@@ -248,6 +249,7 @@ file_layout = "single"        # single | per-object       (files on disk)
 style = "declarative"         # declarative | imperative  (method style)
 optional = "none"             # none | omitted            (optional model fields)
 strip_prefix = "auto"         # "auto" or a dotted prefix to drop from schema names
+inheritance = false           # allOf: [$ref] -> a base class instead of merged fields
 check = true                  # run ruff + mypy --strict on the output
 ```
 
@@ -343,12 +345,48 @@ How optional model fields are represented (adaptix only).
   middle_name: Omittable[str | None] = Omitted()
   ```
 
+### Inheritance — `--inheritance`
+
+What to do with `allOf: [{$ref: Base}, ...]`.
+
+- off (default) — the base's properties are **merged into** each subtype, and a base
+  with a `discriminator` becomes a union alias:
+  ```python
+  @dataclass
+  class CallbackButton:
+      text: str                              # copied from Button
+      payload: str
+      type: Literal['callback'] = 'callback'
+
+  type Button = CallbackButton | LinkButton
+  ```
+- `--inheritance` — the base stays a class and subtypes **inherit** from it, keeping
+  only their own properties plus the discriminator tag:
+  ```python
+  @dataclass(kw_only=True)
+  class Button:
+      type: str
+      text: str
+
+  @dataclass(kw_only=True)
+  class CallbackButton(Button):
+      payload: str
+      type: Literal['callback'] = 'callback'
+  ```
+  Annotations then refer to the base (`list[Button]`) and `isinstance` works across
+  the hierarchy. Model constructors become keyword-only: a subclass may pin an
+  inherited field to a default while adding required fields of its own, which
+  positional ordering cannot express. Only an `allOf` with exactly one `$ref` maps
+  onto a base class — several refs are mixin-style composition with no single parent
+  to pick, so those keep the merge behaviour.
+
 ## OpenAPI coverage
 
 - 3.0 and 3.1; JSON or YAML; file or URL; internal and external `$ref`.
-- Schemas: objects, `allOf` merge, `oneOf`/`anyOf`, discriminator (including
-  polymorphic bases), enums and `const`, formats, nullable, `additionalProperties`,
-  constraints, recursion, and `readOnly` (excluded from request bodies).
+- Schemas: objects, `allOf` (merged, or real inheritance with `--inheritance`),
+  `oneOf`/`anyOf`, discriminator (including polymorphic bases), enums and `const`,
+  formats, nullable, `additionalProperties`, constraints, recursion, and `readOnly`
+  (excluded from request bodies).
 - Operations: path/query/header parameters with defaults, JSON/form/multipart bodies,
   file uploads, typed responses, and `deprecated`.
 - Security: apiKey, http bearer/basic, oauth2, openIdConnect.

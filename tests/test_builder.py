@@ -409,6 +409,47 @@ def test_readonly_json_body_spreads_writable_fields() -> None:
     assert "id" in {f.name for f in thing.fields}
 
 
+def test_body_fields_carry_description() -> None:
+    """Spread body fields keep their schema ``description`` (as parameters do)."""
+    spec: dict[str, Any] = {
+        "openapi": "3.1.0",
+        "info": {"title": "S", "version": "1.0.0"},
+        "paths": {
+            "/d": {
+                "post": {
+                    "operationId": "createDoc",
+                    "tags": ["d"],
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["title"],
+                                    "properties": {
+                                        "title": {
+                                            "type": "string",
+                                            "description": "Document title.",
+                                        },
+                                        "body": {"type": "string"},
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    "responses": {"204": {"description": "no content"}},
+                }
+            }
+        },
+    }
+    ir = build_ir(spec, RefResolver(spec))
+    op = next(o for o in ir.operations if o.method_name == "create_doc")
+    assert op.body is not None
+    fields = {f.name: f for f in op.body.fields}
+    assert fields["title"].description == "Document title."
+    assert fields["body"].description is None
+
+
 def test_readonly_form_field_dropped() -> None:
     spec: dict[str, Any] = {
         "openapi": "3.1.0",
@@ -657,3 +698,153 @@ def test_strip_prefix_auto() -> None:
     # longest common segment prefix is io.k8s -> stripped from both
     assert "ApiCoreV1Pod" in names
     assert "ApimachineryMetaV1ObjectMeta" in names
+
+
+# -- inheritance mode ---------------------------------------------------------------
+
+
+_INHERITANCE_SPEC: dict[str, Any] = {
+    "openapi": "3.0.0",
+    "info": {"title": "I", "version": "1.0.0"},
+    "paths": {},
+    "components": {
+        "schemas": {
+            "Button": {
+                "type": "object",
+                "required": ["type", "text"],
+                "properties": {"type": {"type": "string"}, "text": {"type": "string"}},
+                "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                        "callback": "#/components/schemas/CallbackButton",
+                        "link": "#/components/schemas/LinkButton",
+                    },
+                },
+            },
+            "CallbackButton": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/Button"},
+                    {
+                        "required": ["payload"],
+                        "properties": {
+                            # restated only to add prose: it must stay required
+                            "text": {"type": "string", "description": "Visible label."},
+                            "payload": {"type": "string"},
+                        },
+                    },
+                ]
+            },
+            # marker subtype: nothing but the tag distinguishes it
+            "LinkButton": {"allOf": [{"$ref": "#/components/schemas/Button"}]},
+            "Owner": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {"id": {"type": "integer"}},
+            },
+            "NamedOwner": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/Owner"},
+                    {"properties": {"name": {"type": "string"}}},
+                ]
+            },
+            "Mixed": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/Owner"},
+                    {"$ref": "#/components/schemas/Button"},
+                ]
+            },
+        }
+    },
+}
+
+
+@pytest.fixture
+def inherited() -> IRDocument:
+    spec = _INHERITANCE_SPEC
+    return build_ir(spec, RefResolver(spec), inheritance=True)
+
+
+def test_inheritance_keeps_parent_fields_on_parent(inherited: IRDocument) -> None:
+    base = _decl(inherited, "Button")
+    assert isinstance(base, IRModel)
+    assert base.base is None
+    assert [f.name for f in base.fields] == ["type", "text"]
+
+    sub = _decl(inherited, "CallbackButton")
+    assert sub.base == "Button"
+    # own fields only: the restated ``text``, the new ``payload``, and the pinned tag
+    assert {f.name for f in sub.fields} == {"type", "text", "payload"}
+
+
+def test_inheritance_restated_field_keeps_parent_required(inherited: IRDocument) -> None:
+    sub = _decl(inherited, "CallbackButton")
+    text = next(f for f in sub.fields if f.name == "text")
+    # ``required`` comes from Button; without it the field would widen to `str | None`
+    # and violate the base's declaration.
+    assert text.required is True
+    assert text.type.annotation() == "str"
+    assert text.description == "Visible label."
+
+
+def test_inheritance_pins_discriminator_tag(inherited: IRDocument) -> None:
+    sub = _decl(inherited, "CallbackButton")
+    tag = next(f for f in sub.fields if f.name == "type")
+    assert tag.type == LiteralType(("callback",))
+    assert tag.has_default is True
+    assert tag.default == "callback"
+
+
+def test_inheritance_keeps_marker_subtype_as_class(inherited: IRDocument) -> None:
+    marker = _decl(inherited, "LinkButton")
+    assert isinstance(marker, IRModel)
+    assert marker.base == "Button"
+    assert [f.name for f in marker.fields] == ["type"]
+
+
+def test_inheritance_discriminated_base_is_a_model(inherited: IRDocument) -> None:
+    base = _decl(inherited, "Button")
+    assert isinstance(base, IRModel)
+    assert base.discriminator is not None
+    assert base.discriminator.mapping == {
+        "callback": "CallbackButton",
+        "link": "LinkButton",
+    }
+
+
+def test_inheritance_subtype_does_not_inherit_discriminator(inherited: IRDocument) -> None:
+    # A discriminator belongs to the class that declares it: copying it down would
+    # make every subtype look like a tagged-union base of the whole family.
+    assert _decl(inherited, "CallbackButton").discriminator is None
+    assert _decl(inherited, "LinkButton").discriminator is None
+
+
+def test_inheritance_orders_bases_before_subclasses(inherited: IRDocument) -> None:
+    order = [d.name for d in inherited.declarations]
+    assert order.index("Button") < order.index("CallbackButton")
+    assert order.index("Button") < order.index("LinkButton")
+    assert order.index("Owner") < order.index("NamedOwner")
+
+
+def test_inheritance_plain_allof_ref_becomes_base(inherited: IRDocument) -> None:
+    sub = _decl(inherited, "NamedOwner")
+    assert sub.base == "Owner"
+    assert [f.name for f in sub.fields] == ["name"]
+    assert sub.referenced_models() == {"Owner"}
+
+
+def test_inheritance_multiple_refs_still_merge(inherited: IRDocument) -> None:
+    # Two `$ref`s give no single parent to pick, so the merge behaviour is kept.
+    mixed = _decl(inherited, "Mixed")
+    assert mixed.base is None
+    assert {f.name for f in mixed.fields} == {"id", "type", "text"}
+
+
+def test_without_inheritance_parent_fields_are_merged() -> None:
+    spec = _INHERITANCE_SPEC
+    ir = build_ir(spec, RefResolver(spec))
+    sub = _decl(ir, "CallbackButton")
+    assert isinstance(sub, IRModel)
+    assert sub.base is None
+    assert {f.name for f in sub.fields} == {"type", "text", "payload"}
+    # the discriminated base collapses into a union alias, as before
+    assert isinstance(_decl(ir, "Button"), IRAlias)

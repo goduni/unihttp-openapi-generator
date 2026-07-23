@@ -57,6 +57,7 @@ def run_generation(spec_source: str, config: GeneratorConfig) -> Path:
         root_uri=spec_source,
         omit_optionals=config.optional is OptionalStyle.OMITTED,
         strip_prefix=config.strip_prefix,
+        inheritance=config.inheritance,
     )
     root = write_package(doc, config)
     logger.info("generated %s client at %s", config.package_name, root)

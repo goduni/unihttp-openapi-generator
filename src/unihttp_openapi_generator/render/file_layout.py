@@ -81,13 +81,22 @@ def _type_checking_block(package: str, plan: LayoutPlan, refs: set[str]) -> list
 def render_declaration_module(
     decl: Declaration, strategy: SerializerStrategy, package: str, plan: LayoutPlan
 ) -> str:
-    """Render a single ``models/<stem>.py`` module for one declaration."""
+    """Render a single ``models/<stem>.py`` module for one declaration.
+
+    A parent model appears in the ``class Sub(Base)`` statement, which is evaluated
+    at definition time, so it is imported at runtime; every other model reference
+    lives only inside annotations and stays deferred.
+    """
     imports = set(strategy.declaration_imports(decl))
     refs = decl.referenced_models()
     # Strip cross-model refs from the runtime imports: they live in the
     # TYPE_CHECKING block (and ``from __future__ import annotations`` keeps the
     # annotations lazy). Stdlib/typing/serializer imports stay at runtime.
     imports = {imp for imp in imports if imp.name not in plan.model_modules}
+    base = decl.base if isinstance(decl, IRModel) else None
+    if base is not None and base in plan.model_modules:
+        imports.add(Import(plan.model_dotted(package, base), base))
+        refs = refs - {base}
     body = strategy.render_declaration(decl)
     tc_lines = _type_checking_block(package, plan, refs)
     if tc_lines:

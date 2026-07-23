@@ -339,3 +339,63 @@ def test_docstring_with_backslash_is_raw_and_warning_free() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error")  # SyntaxWarning -> error
         compile(src, "t.py", "exec")  # must not raise
+
+
+# -- inheritance mode ---------------------------------------------------------------
+
+
+_INHERITED_SPEC: dict[str, Any] = {
+    "openapi": "3.0.0",
+    "info": {"title": "I", "version": "1.0.0"},
+    "paths": {},
+    "components": {
+        "schemas": {
+            "Button": {
+                "type": "object",
+                "required": ["type", "text"],
+                "properties": {"type": {"type": "string"}, "text": {"type": "string"}},
+                "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {"callback": "#/components/schemas/CallbackButton"},
+                },
+            },
+            "CallbackButton": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/Button"},
+                    {"required": ["payload"], "properties": {"payload": {"type": "string"}}},
+                ]
+            },
+        }
+    },
+}
+
+
+@pytest.mark.parametrize(
+    "serializer", [Serializer.ADAPTIX, Serializer.PYDANTIC, Serializer.MSGSPEC]
+)
+def test_inherited_models_subclass_their_base(serializer: Serializer, tmp_path: Path) -> None:
+    ir = build_ir(_INHERITED_SPEC, RefResolver(_INHERITED_SPEC), inheritance=True)
+    source = format_python(
+        render_models_module(ir, get_strategy(serializer)), filename="models.py"
+    )
+    assert "class CallbackButton(Button" in source
+    module = _load(source, tmp_path, f"genmodels_inherit_{serializer.value}")
+    assert issubclass(module.CallbackButton, module.Button)
+    # A subclass pinning an inherited field to a default while adding a required one
+    # of its own only works with keyword-only construction.
+    button = module.CallbackButton(text="hi", payload="p")
+    assert button.type == "callback"
+    assert button.text == "hi"
+
+
+def test_inherited_adaptix_models_are_kw_only() -> None:
+    ir = build_ir(_INHERITED_SPEC, RefResolver(_INHERITED_SPEC), inheritance=True)
+    source = render_models_module(ir, get_strategy(Serializer.ADAPTIX))
+    assert "@dataclass(kw_only=True)" in source
+    assert "@dataclass\n" not in source
+
+
+def test_models_without_inheritance_keep_positional_dataclasses() -> None:
+    ir = build_ir(_INHERITED_SPEC, RefResolver(_INHERITED_SPEC))
+    source = render_models_module(ir, get_strategy(Serializer.ADAPTIX))
+    assert "@dataclass(kw_only=True)" not in source

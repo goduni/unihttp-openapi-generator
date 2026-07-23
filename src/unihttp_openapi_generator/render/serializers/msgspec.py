@@ -67,7 +67,9 @@ class MsgspecStrategy(SerializerStrategy):
         return (f.has_default, f.needs_alias)
 
     def render_model(self, model: IRModel) -> str:
-        lines = [f"class {model.name}(Struct):"]
+        # See the adaptix strategy: inheritance forces keyword-only constructors.
+        options = ", kw_only=True" if self.uses_inheritance else ""
+        lines = [f"class {model.name}({model.base or 'Struct'}{options}):"]
         doc = docstring(model.description, "    ")
         if doc:
             lines.append(doc.rstrip("\n"))
