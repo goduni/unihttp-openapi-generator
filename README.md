@@ -37,6 +37,7 @@ wiring. The output is formatted with `ruff` and type-checks clean under `mypy --
     - [Method style — `--style`](#method-style----style)
     - [Optional fields — `--optional`](#optional-fields----optional)
     - [Inheritance — `--inheritance`](#inheritance----inheritance)
+    - [Type stubs — `--stubs`](#type-stubs----stubs)
 - [OpenAPI coverage](#openapi-coverage)
 - [Checking the output — `--check`](#checking-the-output----check)
 - [Limitations](#limitations)
@@ -253,6 +254,7 @@ unihttp-openapi-generator generate SPEC [options]
 | `--optional` | `none` · `omitted` (`none`) — `omitted` distinguishes absent from null (adaptix) |
 | `--strip-prefix` | `auto` or a dotted prefix to drop from schema names (e.g. `io.k8s.api.core.v1.Pod` → `CoreV1Pod`) |
 | `--inheritance` | off by default — render `allOf: [$ref]` as a base class instead of merging its fields in |
+| `--stubs` | off by default — also emit `client.pyi` so PyCharm sees every method signature ([details](#type-stubs----stubs)) |
 | `--check` | run `ruff` and `mypy --strict` on the output ([details](#checking-the-output----check)) |
 | `--config` | TOML config file |
 
@@ -298,6 +300,7 @@ style = "declarative"         # declarative | imperative  (method style)
 optional = "none"             # none | omitted            (optional model fields)
 strip_prefix = "auto"         # "auto" or a dotted prefix to drop from schema names
 inheritance = false           # allOf: [$ref] -> a base class instead of merged fields
+stubs = false                 # also emit client.pyi (see --stubs)
 check = true                  # run ruff + mypy --strict on the output
 ```
 
@@ -376,6 +379,10 @@ How client methods are written.
       return self.call_method(GetTrips(origin=origin, destination=destination,
                                        date=date, page=page, limit=limit))
   ```
+
+If you are reaching for `imperative` only because your editor cannot see through
+`bind_method`, [`--stubs`](#type-stubs----stubs) gets you the same signatures without
+changing the runtime code.
 
 ### Optional fields — `--optional`
 
@@ -466,6 +473,60 @@ What to do with `allOf: [{$ref: Base}, ...]`.
   the tagged decoding can be wired in `_serialization.py`. Leave `--inheritance` off if
   you want polymorphic responses to parse into subtypes out of the box.
 
+### Type stubs — `--stubs`
+
+A declarative client binds each operation from its request class:
+
+```python
+class FrankfurterAPIClient(HTTPXSyncClient):
+    get_rates_for_date = bind_method(GetRatesForDate)
+```
+
+`bind_method` returns a descriptor whose `__get__` overloads carry a `ParamSpec` taken
+from the request dataclass. mypy and pyright resolve that; **PyCharm does not**, so it
+shows no signature, no parameter info, and no return type for any operation. That is a
+limitation of the IDE, not something the generated code can work around at runtime.
+
+`--stubs` writes a `client.pyi` next to `client.py`. The runtime module is unchanged —
+it still binds declaratively — but type checkers and IDEs read the stub, which spells
+every operation out, docstrings included:
+
+```python
+class FrankfurterAPIClient(HTTPXSyncClient):
+    def __init__(
+        self,
+        base_url: str = DEFAULT_BASE_URL,
+        *,
+        session: Any = None,
+        middleware: list[Any] | None = None,
+    ) -> None: ...
+    def get_rates_for_date(
+        self,
+        *,
+        date: str,
+        base: Omittable[str] = Omitted(),
+        symbols: Omittable[list[str]] = Omitted(),
+        amount: Omittable[float] = Omitted(),
+    ) -> ExchangeRates:
+        """Historical exchange rates for a date
+
+        Reference rates for a specific day (YYYY-MM-DD)...
+        """
+```
+
+Notes:
+
+- Only `client.py` gets a stub. Models and request classes are plain dataclasses,
+  Pydantic models, or `msgspec.Struct`s — PyCharm resolves all three on its own, and
+  every extra stub would be one more module that type checkers read *instead of* the
+  implementation.
+- It cannot be combined with `--style imperative`, which already spells the same
+  signatures out in `client.py`; the generator rejects the combination rather than
+  emitting two copies that can drift apart.
+- `--check` runs `mypy --strict` twice when stubs are on: once as a consumer sees the
+  package (the stub wins) and once with the stub excluded, so `client.py` is still
+  type-checked rather than being silently skipped.
+
 ## OpenAPI coverage
 
 - 3.0 and 3.1; JSON or YAML; file or URL; internal and external `$ref`.
@@ -479,7 +540,9 @@ What to do with `allOf: [{$ref: Base}, ...]`.
 
 ## Checking the output — `--check`
 
-`--check` runs `ruff check` and `mypy --strict` over the generated package.
+`--check` runs `ruff check` and `mypy --strict` over the generated package. With
+[`--stubs`](#type-stubs----stubs) it runs `mypy` a second time with `client.pyi`
+excluded, so the runtime module a stub would otherwise hide stays checked too.
 
 Both tools are ordinary dependencies of the generator, so installing it installs them —
 there is nothing extra to add. They are also resolved from the generator's *own*

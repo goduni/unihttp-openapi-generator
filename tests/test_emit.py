@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ import pytest
 
 from unihttp_openapi_generator.config import ClientKind, GeneratorConfig, Serializer
 from unihttp_openapi_generator.pipeline import run_generation
+from unihttp_openapi_generator.tooling import ruff_executable
 
 
 @pytest.fixture
@@ -76,3 +78,47 @@ def test_pyproject_pins_unihttp_floor(spec_file: Path, tmp_path: Path) -> None:
     run_generation(str(spec_file), config)
     pyproject = (out / "pyproject.toml").read_text()
     assert '"unihttp>=0.2.9"' in pyproject, pyproject
+
+
+def test_no_stub_is_written_by_default(spec_file: Path, tmp_path: Path) -> None:
+    out = tmp_path / "out_nostub"
+    run_generation(
+        str(spec_file),
+        GeneratorConfig(package_name="nostub_client", output_dir=out),
+    )
+    assert not (out / "nostub_client" / "client.pyi").exists()
+
+
+def test_stubs_writes_a_formatted_client_pyi(spec_file: Path, tmp_path: Path) -> None:
+    out = tmp_path / "out_stub"
+    run_generation(
+        str(spec_file),
+        GeneratorConfig(package_name="stub_client", output_dir=out, stubs=True),
+    )
+    stub = out / "stub_client" / "client.pyi"
+    assert stub.is_file()
+    source = stub.read_text()
+    # The runtime module is untouched and still binds declaratively...
+    assert "bind_method" in (out / "stub_client" / "client.py").read_text()
+    # ...while the stub spells the same operations out.
+    assert "def list_pets(" in source
+    assert "bind_method" not in source
+    # Module-level names are declared without values, and ruff's stub-mode formatting
+    # keeps the empty ``__init__`` body as ``...``.
+    assert "DEFAULT_BASE_URL: str\n" in source
+    assert "base_url: str = DEFAULT_BASE_URL," in source
+    assert ") -> None: ..." in source
+
+
+def test_generated_stub_is_ruff_clean(spec_file: Path, tmp_path: Path) -> None:
+    out = tmp_path / "out_stub_lint"
+    run_generation(
+        str(spec_file),
+        GeneratorConfig(package_name="lint_client", output_dir=out, stubs=True),
+    )
+    result = subprocess.run(
+        [ruff_executable(), "check", "--isolated", str(out / "lint_client" / "client.pyi")],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

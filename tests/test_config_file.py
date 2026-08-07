@@ -106,3 +106,52 @@ def test_cli_flag_overrides_config_file(spec_path: Path, tmp_path: Path) -> None
 def test_cli_missing_required_errors(tmp_path: Path) -> None:
     result = runner.invoke(app, ["generate", "--serializer", "adaptix"])
     assert result.exit_code != 0
+
+
+def test_cli_stubs_flag_emits_a_stub(spec_path: Path, tmp_path: Path) -> None:
+    out = tmp_path / "out_stubs_cli"
+    result = runner.invoke(
+        app,
+        [
+            "generate",
+            str(spec_path),
+            "-o",
+            str(out),
+            "--package-name",
+            "cli_stub_client",
+            "--stubs",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert (out / "cli_stub_client" / "client.pyi").is_file()
+
+
+def test_stubs_reaches_the_config_from_a_config_file(spec_path: Path, tmp_path: Path) -> None:
+    out = tmp_path / "out_stubs_toml"
+    cfg = _write(
+        tmp_path / "gen.toml",
+        f'spec = "{spec_path}"\noutput_dir = "{out}"\n'
+        'package_name = "toml_stub_client"\nstubs = true\n',
+    )
+    result = runner.invoke(app, ["generate", "--config", str(cfg)])
+    assert result.exit_code == 0, result.output
+    assert (out / "toml_stub_client" / "client.pyi").is_file()
+
+
+def test_cli_rejects_stubs_with_imperative_style(spec_path: Path, tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "generate",
+            str(spec_path),
+            "-o",
+            str(tmp_path / "out_bad"),
+            "--package-name",
+            "bad_client",
+            "--stubs",
+            "--style",
+            "imperative",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "imperative" in result.output

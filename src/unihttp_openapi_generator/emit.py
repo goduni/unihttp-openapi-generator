@@ -34,6 +34,7 @@ from unihttp_openapi_generator.render.models import render_models_module
 from unihttp_openapi_generator.render.query import deep_object_query_keys, render_query_module
 from unihttp_openapi_generator.render.serializers import get_strategy
 from unihttp_openapi_generator.render.serializers.base import SerializerStrategy
+from unihttp_openapi_generator.render.stubs import render_client_stub
 
 _BACKEND_DISTRIBUTION = {
     SyncBackend.HTTPX: "httpx>=0.28.1",
@@ -203,6 +204,8 @@ def write_package(doc: IRDocument, config: GeneratorConfig) -> Path:
     if deep_object_query_keys(doc):
         _write_py(package_dir / "_query.py", render_query_module())
     _write_py(package_dir / "client.py", render_client_module(doc, config, package))
+    if config.stubs:
+        _write_py(package_dir / "client.pyi", render_client_stub(doc, config, package))
     _write_py(package_dir / "__init__.py", _render_package_init(doc, config, package))
     (package_dir / "py.typed").write_text("")
 

@@ -34,6 +34,7 @@ ALLOWED_KEYS = frozenset(
         "file_layout",
         "strip_prefix",
         "inheritance",
+        "stubs",
         "check",
     }
 )

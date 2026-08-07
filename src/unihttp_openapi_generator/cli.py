@@ -68,6 +68,14 @@ def generate(
             help="Render 'allOf: [$ref]' as a base class instead of merging its fields in.",
         ),
     ] = None,
+    stubs: Annotated[
+        bool | None,
+        typer.Option(
+            "--stubs/--no-stubs",
+            help="Also emit client.pyi, so editors that cannot follow bind_method "
+            "(notably PyCharm) still see every method signature.",
+        ),
+    ] = None,
     check: Annotated[bool | None, typer.Option("--check/--no-check")] = None,
     config: Annotated[
         Path | None,
@@ -97,6 +105,7 @@ def generate(
         "file_layout": file_layout,
         "strip_prefix": strip_prefix,
         "inheritance": inheritance,
+        "stubs": stubs,
         "check": check,
     }
 

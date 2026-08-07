@@ -21,18 +21,20 @@ from unihttp_openapi_generator.render.auth import (
 from unihttp_openapi_generator.render.engine import render_template
 from unihttp_openapi_generator.render.imports import render_import_lines
 from unihttp_openapi_generator.render.methods import (
+    method_signature,
     operation_fields,
+    signatures_use_omitted,
     tag_module_name,
 )
 from unihttp_openapi_generator.render.query import deep_object_query_keys
 
-_SYNC_BACKENDS: dict[SyncBackend, tuple[str, str]] = {
+SYNC_BACKENDS: dict[SyncBackend, tuple[str, str]] = {
     SyncBackend.HTTPX: ("HTTPXSyncClient", "unihttp.clients.httpx"),
     SyncBackend.REQUESTS: ("RequestsSyncClient", "unihttp.clients.requests"),
     SyncBackend.NIQUESTS: ("NiquestsSyncClient", "unihttp.clients.niquests"),
     SyncBackend.ZAPROS: ("ZaprosSyncClient", "unihttp.clients.zapros"),
 }
-_ASYNC_BACKENDS: dict[AsyncBackend, tuple[str, str]] = {
+ASYNC_BACKENDS: dict[AsyncBackend, tuple[str, str]] = {
     AsyncBackend.HTTPX: ("HTTPXAsyncClient", "unihttp.clients.httpx"),
     AsyncBackend.AIOHTTP: ("AiohttpAsyncClient", "unihttp.clients.aiohttp"),
     AsyncBackend.NIQUESTS: ("NiquestsAsyncClient", "unihttp.clients.niquests"),
@@ -49,43 +51,14 @@ def async_client_name(title: str) -> str:
 
 
 def _imperative_method_lines(op: IROperation, attr: str, *, is_async: bool) -> list[str]:
-    """Render an explicit typed wrapper method delegating to ``self.call_method``.
-
-    The parameter list mirrors the operation's ``BaseMethod`` dataclass fields
-    exactly (names, types, defaults), keyword-only, required first.
-    """
-    fields = operation_fields(op)
-    params: list[str] = []
-    for spec in fields:
-        if spec.required:
-            params.append(f"{spec.py_name}: {spec.inner}")
-        elif spec.has_default:
-            if spec.is_factory:
-                # Mutable defaults can't be literal arg defaults; wrap as Omittable.
-                params.append(f"{spec.py_name}: Omittable[{spec.inner}] = Omitted()")
-            else:
-                params.append(f"{spec.py_name}: {spec.inner} = {spec.default!r}")
-        else:
-            params.append(f"{spec.py_name}: Omittable[{spec.inner}] = Omitted()")
-
-    signature = ", ".join(["self", "*", *params]) if params else "self"
-    return_anno = op.return_type.annotation() if op.return_type is not None else "None"
-    ctor_args = ", ".join(f"{spec.py_name}={spec.py_name}" for spec in fields)
+    """Render an explicit typed wrapper method delegating to ``self.call_method``."""
+    ctor_args = ", ".join(f"{spec.py_name}={spec.py_name}" for spec in operation_fields(op))
     call = f"self.call_method({op.class_name}({ctor_args}))"
-    prefix = "async def" if is_async else "def"
     body = f"return await {call}" if is_async else f"return {call}"
     return [
-        f"    {prefix} {attr}({signature}) -> {return_anno}:",
+        f"    {method_signature(op, attr, is_async=is_async)}",
         f"        {body}",
     ]
-
-
-def _imperative_uses_omitted(ops: list[IROperation]) -> bool:
-    return any(
-        not spec.required and (not spec.has_default or spec.is_factory)
-        for op in ops
-        for spec in operation_fields(op)
-    )
 
 
 def _auth_middleware_class(cred: AuthCredential, *, is_async: bool) -> str:
@@ -175,12 +148,20 @@ def _flat_root_client(
     return "\n".join(lines)
 
 
+def flat_client_attributes(doc: IRDocument) -> list[tuple[str, IROperation]]:
+    """Attribute name per operation on a flat client, de-duplicated across all tags.
+
+    The stub renderer reuses this: an attribute named differently there than in
+    ``client.py`` would simply not exist as far as a type checker is concerned.
+    """
+    registry = NameRegistry()
+    return [(registry.reserve(op.method_name), op) for op in doc.operations]
+
+
 def _flat_method_lines(doc: IRDocument, style: MethodStyle, *, is_async: bool) -> list[str]:
     """Per-operation client members for a flat client (names globally de-duplicated)."""
-    registry = NameRegistry()
     lines: list[str] = []
-    for op in doc.operations:
-        attr = registry.reserve(op.method_name)
+    for attr, op in flat_client_attributes(doc):
         if style is MethodStyle.IMPERATIVE:
             lines.extend(_imperative_method_lines(op, attr, is_async=is_async))
         else:
@@ -220,7 +201,7 @@ def render_client_module(doc: IRDocument, config: GeneratorConfig, package: str)
             imports |= op.imports()
             model_refs |= op.referenced_models()
         imports |= {Import(f"{package}.models", name) for name in model_refs}
-        if _imperative_uses_omitted(doc.operations):
+        if signatures_use_omitted(doc.operations):
             imports.add(Import("unihttp.omitted", "Omittable"))
             imports.add(Import("unihttp.omitted", "Omitted"))
 
@@ -251,14 +232,14 @@ def render_client_module(doc: IRDocument, config: GeneratorConfig, package: str)
 
     deep_keys = deep_object_query_keys(doc)
     if config.emit_sync:
-        backend_cls, backend_mod = _SYNC_BACKENDS[config.sync_backend]
+        backend_cls, backend_mod = SYNC_BACKENDS[config.sync_backend]
         imports.add(Import(backend_mod, backend_cls))
         imports.add(Import("unihttp.middlewares.error_mapper", "SyncErrorMapperMiddleware"))
         if deep_keys:
             imports.add(Import(f"{package}._query", "DeepObjectQuerySyncMiddleware"))
         emit_side(backend_cls, is_async=False)
     if config.emit_async:
-        backend_cls, backend_mod = _ASYNC_BACKENDS[config.async_backend]
+        backend_cls, backend_mod = ASYNC_BACKENDS[config.async_backend]
         imports.add(Import(backend_mod, backend_cls))
         imports.add(Import("unihttp.middlewares.error_mapper", "AsyncErrorMapperMiddleware"))
         if deep_keys:

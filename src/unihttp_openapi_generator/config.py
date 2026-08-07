@@ -72,6 +72,7 @@ class GeneratorConfig(BaseModel):
     file_layout: FileLayout = FileLayout.SINGLE
     strip_prefix: str | None = None  # "auto" or a dotted prefix to drop from schema names
     inheritance: bool = False  # allOf: [$ref] -> a real base class instead of merged fields
+    stubs: bool = False  # emit client.pyi so editors see explicit method signatures
     check: bool = False
 
     @model_validator(mode="after")
@@ -82,6 +83,11 @@ class GeneratorConfig(BaseModel):
             )
         if self.optional is OptionalStyle.OMITTED and self.serializer is not Serializer.ADAPTIX:
             raise ValueError("--optional omitted is only supported with the adaptix serializer")
+        if self.stubs and self.style is MethodStyle.IMPERATIVE:
+            raise ValueError(
+                "--stubs is redundant with --style imperative, which already spells "
+                "every method signature out in client.py"
+            )
         return self
 
     @property

@@ -122,6 +122,39 @@ def operation_fields(op: IROperation) -> list[OperationField]:
     return [*required, *optional]
 
 
+def method_signature(op: IROperation, attr: str, *, is_async: bool) -> str:
+    """The ``def`` header for ``op`` as a client method, without a body.
+
+    Shared by the imperative client renderer and the stub renderer so the two can
+    never disagree on parameter names, types, order, or defaults. The parameter list
+    mirrors the operation's ``BaseMethod`` dataclass fields exactly, keyword-only,
+    required first.
+    """
+    params: list[str] = []
+    for spec in operation_fields(op):
+        if spec.required:
+            params.append(f"{spec.py_name}: {spec.inner}")
+        elif spec.has_default and not spec.is_factory:
+            params.append(f"{spec.py_name}: {spec.inner} = {spec.default!r}")
+        else:
+            # No default, or a mutable one that can't be a literal arg default.
+            params.append(f"{spec.py_name}: Omittable[{spec.inner}] = Omitted()")
+
+    signature = ", ".join(["self", "*", *params]) if params else "self"
+    return_anno = op.return_type.annotation() if op.return_type is not None else "None"
+    prefix = "async def" if is_async else "def"
+    return f"{prefix} {attr}({signature}) -> {return_anno}:"
+
+
+def signatures_use_omitted(ops: list[IROperation]) -> bool:
+    """Whether any signature from ``method_signature`` needs ``Omittable``/``Omitted``."""
+    return any(
+        not spec.required and (not spec.has_default or spec.is_factory)
+        for op in ops
+        for spec in operation_fields(op)
+    )
+
+
 def _collect_field_lines(op: IROperation) -> tuple[list[str], set[str], bool, bool]:
     """Return (ordered field lines, marker names used, uses_omitted, uses_field)."""
     lines: list[str] = []

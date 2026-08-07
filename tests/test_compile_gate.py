@@ -11,7 +11,13 @@ from typing import Any
 
 import pytest
 
-from unihttp_openapi_generator.config import ClientKind, FileLayout, GeneratorConfig, Serializer
+from unihttp_openapi_generator.config import (
+    ClientKind,
+    FileLayout,
+    GeneratorConfig,
+    Layout,
+    Serializer,
+)
 from unihttp_openapi_generator.pipeline import run_generation
 
 _MATRIX = [
@@ -36,7 +42,8 @@ def hierarchy_spec_file(hierarchy_spec: dict[str, Any], tmp_path: Path) -> Path:
 
 
 def _collect_sources(root: Path) -> dict[str, str]:
-    return {str(p.relative_to(root)): p.read_text() for p in sorted(root.rglob("*.py"))}
+    paths = sorted([*root.rglob("*.py"), *root.rglob("*.pyi")])
+    return {str(p.relative_to(root)): p.read_text() for p in paths}
 
 
 def _assert_ruff_clean(package_dir: Path) -> None:
@@ -114,9 +121,59 @@ def test_inheritance_package_passes_ruff_and_mypy(
     _assert_mypy_strict_clean(out / package)
 
 
-def test_generation_is_deterministic(spec_file: Path, tmp_path: Path) -> None:
-    config_a = GeneratorConfig(package_name="det_client", output_dir=tmp_path / "a")
-    config_b = GeneratorConfig(package_name="det_client", output_dir=tmp_path / "b")
+@pytest.mark.parametrize(("serializer", "client"), _MATRIX)
+def test_stubbed_package_passes_ruff_and_both_mypy_passes(
+    spec_file: Path, tmp_path: Path, serializer: Serializer, client: ClientKind
+) -> None:
+    """``--stubs --check`` runs the real gate, including the implementation pass.
+
+    ``check=True`` is the point of the test rather than a shortcut: a stub takes
+    ``client.py`` out of mypy's sight, so only the pipeline's second pass proves the
+    runtime module is still clean, and only the first proves the stub itself is.
+    """
+    package = f"stub_{serializer.value}"
+    out = tmp_path / package
+    run_generation(
+        str(spec_file),
+        GeneratorConfig(
+            package_name=package,
+            output_dir=out,
+            serializer=serializer,
+            client=client,
+            stubs=True,
+            check=True,
+        ),
+    )
+    assert (out / package / "client.pyi").is_file()
+
+
+@pytest.mark.parametrize("layout", list(Layout))
+@pytest.mark.parametrize("file_layout", list(FileLayout))
+def test_stubs_survive_every_layout(
+    spec_file: Path, tmp_path: Path, layout: Layout, file_layout: FileLayout
+) -> None:
+    # Grouped layout adds sub-client classes to the stub, and the per-object file
+    # layout moves the models the signatures reference behind a re-exporting package.
+    package = f"stublay_{layout.name.lower()}_{file_layout.name.lower()}"
+    out = tmp_path / package
+    run_generation(
+        str(spec_file),
+        GeneratorConfig(
+            package_name=package,
+            output_dir=out,
+            layout=layout,
+            file_layout=file_layout,
+            stubs=True,
+            check=True,
+        ),
+    )
+    assert (out / package / "client.pyi").is_file()
+
+
+@pytest.mark.parametrize("stubs", [False, True])
+def test_generation_is_deterministic(spec_file: Path, tmp_path: Path, stubs: bool) -> None:
+    config_a = GeneratorConfig(package_name="det_client", output_dir=tmp_path / "a", stubs=stubs)
+    config_b = GeneratorConfig(package_name="det_client", output_dir=tmp_path / "b", stubs=stubs)
     run_generation(str(spec_file), config_a)
     run_generation(str(spec_file), config_b)
     sources_a = _collect_sources(tmp_path / "a" / "det_client")

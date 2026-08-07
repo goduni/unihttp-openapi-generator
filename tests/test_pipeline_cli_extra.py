@@ -10,7 +10,12 @@ from typer.testing import CliRunner
 
 from unihttp_openapi_generator import __version__
 from unihttp_openapi_generator.cli import app
-from unihttp_openapi_generator.pipeline import CheckError, _mypy_args, _run_check
+from unihttp_openapi_generator.pipeline import (
+    CheckError,
+    _check_package,
+    _mypy_args,
+    _run_check,
+)
 
 runner = CliRunner()
 
@@ -53,3 +58,19 @@ def test_invalid_package_name_is_bad_parameter(tmp_path: Path) -> None:
     # the pydantic ValidationError (a ValueError) is surfaced as a BadParameter
     assert "Invalid value" in result.output
     assert "GeneratorConfig" in result.output
+
+
+def test_check_looks_past_a_stub_at_the_implementation(tmp_path: Path) -> None:
+    # A ``.pyi`` takes a module out of mypy's sight completely, so ``--stubs`` adds a
+    # second pass that excludes the stub -- otherwise ``client.py`` would ship
+    # unchecked, and any stub/implementation mismatch would go unnoticed.
+    pkg = tmp_path / "stubbed"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("")
+    (pkg / "client.py").write_text("def broken() -> int:\n    return 'not an int'\n")
+    (pkg / "client.pyi").write_text("def broken() -> int: ...\n")
+
+    _check_package(pkg, stubs=False)  # single pass: the stub wins, the error hides
+
+    with pytest.raises(CheckError, match="Incompatible return value"):
+        _check_package(pkg, stubs=True)

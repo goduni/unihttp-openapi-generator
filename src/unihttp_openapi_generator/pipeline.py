@@ -48,12 +48,21 @@ def _mypy_args() -> list[str]:
     return args
 
 
-def _check_package(package_dir: Path) -> None:
+def _check_package(package_dir: Path, *, stubs: bool) -> None:
     # Generated packages ship without a ``[tool.ruff]`` table and are meant to lint
     # under ruff's defaults; ``--isolated`` ignores any ambient config that ruff
     # would otherwise discover from the cwd/parent dirs.
     _run_check("ruff", [ruff_executable(), "check", "--isolated"], package_dir)
     _run_check("mypy", [*mypy_command(), *_mypy_args()], package_dir)
+    if stubs:
+        # ``client.pyi`` makes mypy skip ``client.py`` entirely, so the run above
+        # checks what a consumer sees and nothing of the module that actually runs.
+        # Exclude the stub and check the implementation too.
+        _run_check(
+            "mypy (implementation)",
+            [*mypy_command(), *_mypy_args(), "--exclude", r"client\.pyi$"],
+            package_dir,
+        )
 
 
 def run_generation(spec_source: str, config: GeneratorConfig) -> Path:
@@ -71,5 +80,5 @@ def run_generation(spec_source: str, config: GeneratorConfig) -> Path:
     root = write_package(doc, config)
     logger.info("generated %s client at %s", config.package_name, root)
     if config.check:
-        _check_package(root / config.package_name)
+        _check_package(root / config.package_name, stubs=config.stubs)
     return root

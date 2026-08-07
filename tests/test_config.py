@@ -7,7 +7,12 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from unihttp_openapi_generator.config import ClientKind, GeneratorConfig, Serializer
+from unihttp_openapi_generator.config import (
+    ClientKind,
+    GeneratorConfig,
+    MethodStyle,
+    Serializer,
+)
 
 
 def _config(**overrides: object) -> GeneratorConfig:
@@ -22,6 +27,14 @@ def test_defaults() -> None:
     assert cfg.client is ClientKind.BOTH
     assert cfg.style.value == "declarative"
     assert cfg.check is False
+    assert cfg.stubs is False
+
+
+def test_rejects_stubs_with_imperative_style() -> None:
+    # Imperative clients already spell every signature out in ``client.py``; a stub
+    # would duplicate them and could drift from them.
+    with pytest.raises(ValidationError, match="imperative"):
+        _config(stubs=True, style=MethodStyle.IMPERATIVE)
 
 
 def test_rejects_invalid_package_name() -> None:
