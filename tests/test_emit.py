@@ -122,3 +122,24 @@ def test_generated_stub_is_ruff_clean(spec_file: Path, tmp_path: Path) -> None:
         text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_regenerating_without_stubs_removes_a_stale_one(spec_file: Path, tmp_path: Path) -> None:
+    # Generation writes over an existing package rather than clearing it, and a stub
+    # keeps overriding client.py for every type checker and IDE that reads it. Left
+    # behind, it would serve the previous run's signatures forever -- worse than no
+    # stub at all once the spec has moved on.
+    out = tmp_path / "out_stale"
+    stub = out / "stale_client" / "client.pyi"
+
+    run_generation(
+        str(spec_file),
+        GeneratorConfig(package_name="stale_client", output_dir=out, stubs=True),
+    )
+    assert stub.is_file()
+
+    run_generation(
+        str(spec_file),
+        GeneratorConfig(package_name="stale_client", output_dir=out, stubs=False),
+    )
+    assert not stub.exists()

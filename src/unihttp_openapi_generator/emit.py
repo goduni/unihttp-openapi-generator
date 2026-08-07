@@ -206,6 +206,12 @@ def write_package(doc: IRDocument, config: GeneratorConfig) -> Path:
     _write_py(package_dir / "client.py", render_client_module(doc, config, package))
     if config.stubs:
         _write_py(package_dir / "client.pyi", render_client_stub(doc, config, package))
+    else:
+        # Generation writes over an existing package rather than clearing it, and a
+        # stub overrides ``client.py`` for every type checker and IDE that reads it.
+        # Left behind by a previous ``--stubs`` run it would keep serving that run's
+        # signatures -- worse than no stub once the spec has moved on.
+        (package_dir / "client.pyi").unlink(missing_ok=True)
     _write_py(package_dir / "__init__.py", _render_package_init(doc, config, package))
     (package_dir / "py.typed").write_text("")
 
