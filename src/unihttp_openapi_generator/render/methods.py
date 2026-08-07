@@ -122,6 +122,22 @@ def operation_fields(op: IROperation) -> list[OperationField]:
     return [*required, *optional]
 
 
+def method_receiver(op: IROperation) -> str:
+    """The name to give a client method's receiver -- ``self`` unless a parameter took it.
+
+    ``self`` is a perfectly legal parameter name in a spec, and the request dataclass
+    carries it as a field: ``dataclasses`` renames *its* receiver to
+    ``__dataclass_self__`` in that case, so ``GetA(self=...)`` works at runtime. A
+    client method has to do the same, or it emits ``def get_a(self, *, self: str)`` --
+    a duplicate-argument syntax error that takes the whole generation down.
+    """
+    taken = {spec.py_name for spec in operation_fields(op)}
+    receiver = "self"
+    while receiver in taken:
+        receiver += "_"
+    return receiver
+
+
 def method_signature(op: IROperation, attr: str, *, is_async: bool) -> str:
     """The ``def`` header for ``op`` as a client method, without a body.
 
@@ -140,7 +156,8 @@ def method_signature(op: IROperation, attr: str, *, is_async: bool) -> str:
             # No default, or a mutable one that can't be a literal arg default.
             params.append(f"{spec.py_name}: Omittable[{spec.inner}] = Omitted()")
 
-    signature = ", ".join(["self", "*", *params]) if params else "self"
+    receiver = method_receiver(op)
+    signature = ", ".join([receiver, "*", *params]) if params else receiver
     return_anno = op.return_type.annotation() if op.return_type is not None else "None"
     prefix = "async def" if is_async else "def"
     return f"{prefix} {attr}({signature}) -> {return_anno}:"

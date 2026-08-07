@@ -244,3 +244,30 @@ _DEPRECATED_SPEC: dict[str, Any] = {
 def test_deprecated_operation_is_marked_in_the_stub_docstring() -> None:
     out = _render(_DEPRECATED_SPEC, client=ClientKind.SYNC)
     assert '"""Deprecated."""' in out
+
+
+_SELF_PARAM_SPEC: dict[str, Any] = {
+    "openapi": "3.1.0",
+    "info": {"title": "Shadow", "version": "1.0.0"},
+    "paths": {
+        "/a": {
+            "get": {
+                "operationId": "getA",
+                "tags": ["t"],
+                "parameters": [
+                    {"name": "self", "in": "query", "required": True, "schema": {"type": "string"}}
+                ],
+                "responses": {"200": {"description": "ok"}},
+            }
+        }
+    },
+}
+
+
+def test_parameter_named_self_moves_the_receiver_aside() -> None:
+    # ``self`` is a legal query-parameter name and a legal dataclass field name --
+    # dataclasses itself renames the receiver to ``__dataclass_self__`` for this case,
+    # so ``GetA(self=...)`` works at runtime. A stub that wrote ``def get_a(self, *,
+    # self: str)`` would be a syntax error and take the whole generation down with it.
+    out = _render(_SELF_PARAM_SPEC, client=ClientKind.SYNC)
+    assert "def get_a(self_, *, self: str) -> None:" in out

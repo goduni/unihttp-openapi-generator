@@ -16,6 +16,7 @@ from unihttp_openapi_generator.config import (
     FileLayout,
     GeneratorConfig,
     Layout,
+    MethodStyle,
     Serializer,
 )
 from unihttp_openapi_generator.pipeline import run_generation
@@ -179,3 +180,48 @@ def test_generation_is_deterministic(spec_file: Path, tmp_path: Path, stubs: boo
     sources_a = _collect_sources(tmp_path / "a" / "det_client")
     sources_b = _collect_sources(tmp_path / "b" / "det_client")
     assert sources_a == sources_b
+
+
+def test_a_parameter_named_self_still_generates(tmp_path: Path) -> None:
+    """``self`` as a parameter name must not break the spelled-out signatures.
+
+    The request dataclass takes it as a field -- ``dataclasses`` moves its own
+    receiver aside so ``GetA(self=...)`` works -- so a client method has to move
+    its receiver too. Both styles that spell signatures out are checked.
+    """
+    spec = tmp_path / "self.json"
+    spec.write_text(
+        json.dumps(
+            {
+                "openapi": "3.1.0",
+                "info": {"title": "Shadow", "version": "1.0.0"},
+                "paths": {
+                    "/a": {
+                        "get": {
+                            "operationId": "getA",
+                            "tags": ["t"],
+                            "parameters": [
+                                {
+                                    "name": "self",
+                                    "in": "query",
+                                    "required": True,
+                                    "schema": {"type": "string"},
+                                }
+                            ],
+                            "responses": {"200": {"description": "ok"}},
+                        }
+                    }
+                },
+            }
+        )
+    )
+    for name, extra in (
+        ("shadow_stub", {"stubs": True}),
+        ("shadow_imp", {"style": MethodStyle.IMPERATIVE}),
+    ):
+        out = tmp_path / name
+        run_generation(
+            str(spec),
+            GeneratorConfig(package_name=name, output_dir=out, check=True, **extra),
+        )
+        assert (out / name / "client.py").is_file()

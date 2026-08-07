@@ -118,3 +118,28 @@ _BASIC_AUTH_SPEC: dict[str, Any] = {
 def test_basic_auth_prepends_base64_import() -> None:
     out = _render(_BASIC_AUTH_SPEC, client=ClientKind.SYNC)
     assert "import base64\n" in out
+
+
+def test_imperative_method_shadowed_by_a_self_parameter() -> None:
+    # The receiver moves aside, so the delegating body has to follow it.
+    out = _render(_SELF_PARAM_SPEC, style=MethodStyle.IMPERATIVE, client=ClientKind.SYNC)
+    assert "def get_a(self_, *, self: str) -> None:" in out
+    assert "return self_.call_method(GetA(self=self))" in out
+
+
+_SELF_PARAM_SPEC: dict[str, Any] = {
+    "openapi": "3.1.0",
+    "info": {"title": "Shadow", "version": "1.0.0"},
+    "paths": {
+        "/a": {
+            "get": {
+                "operationId": "getA",
+                "tags": ["t"],
+                "parameters": [
+                    {"name": "self", "in": "query", "required": True, "schema": {"type": "string"}}
+                ],
+                "responses": {"200": {"description": "ok"}},
+            }
+        }
+    },
+}

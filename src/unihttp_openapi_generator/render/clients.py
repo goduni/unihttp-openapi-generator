@@ -21,6 +21,7 @@ from unihttp_openapi_generator.render.auth import (
 from unihttp_openapi_generator.render.engine import render_template
 from unihttp_openapi_generator.render.imports import render_import_lines
 from unihttp_openapi_generator.render.methods import (
+    method_receiver,
     method_signature,
     operation_fields,
     signatures_use_omitted,
@@ -53,7 +54,7 @@ def async_client_name(title: str) -> str:
 def _imperative_method_lines(op: IROperation, attr: str, *, is_async: bool) -> list[str]:
     """Render an explicit typed wrapper method delegating to ``self.call_method``."""
     ctor_args = ", ".join(f"{spec.py_name}={spec.py_name}" for spec in operation_fields(op))
-    call = f"self.call_method({op.class_name}({ctor_args}))"
+    call = f"{method_receiver(op)}.call_method({op.class_name}({ctor_args}))"
     body = f"return await {call}" if is_async else f"return {call}"
     return [
         f"    {method_signature(op, attr, is_async=is_async)}",
