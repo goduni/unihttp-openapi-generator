@@ -52,7 +52,7 @@ def async_client_name(title: str) -> str:
 
 
 def _imperative_method_lines(op: IROperation, attr: str, *, is_async: bool) -> list[str]:
-    """Render an explicit typed wrapper method delegating to ``self.call_method``."""
+    """Render an explicit typed wrapper method delegating to the client's ``call_method``."""
     ctor_args = ", ".join(f"{spec.py_name}={spec.py_name}" for spec in operation_fields(op))
     call = f"{method_receiver(op)}.call_method({op.class_name}({ctor_args}))"
     body = f"return await {call}" if is_async else f"return {call}"
