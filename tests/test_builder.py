@@ -12,6 +12,7 @@ from unihttp_openapi_generator.ir.models import IRAlias, IREnum, IRModel
 from unihttp_openapi_generator.ir.operations import BodyKind, ParamLocation
 from unihttp_openapi_generator.ir.types import (
     BOOL,
+    FLOAT,
     INT,
     STR,
     ListType,
@@ -715,7 +716,11 @@ _INHERITANCE_SPEC: dict[str, Any] = {
             "Button": {
                 "type": "object",
                 "required": ["type", "text"],
-                "properties": {"type": {"type": "string"}, "text": {"type": "string"}},
+                "properties": {
+                    "type": {"type": "string"},
+                    "text": {"type": "string"},
+                    "label": {"type": "string"},
+                },
                 "discriminator": {
                     "propertyName": "type",
                     "mapping": {
@@ -732,6 +737,8 @@ _INHERITANCE_SPEC: dict[str, Any] = {
                         "properties": {
                             # restated only to add prose: it must stay required
                             "text": {"type": "string", "description": "Visible label."},
+                            # byte-for-byte restatement: explicit presence still matters
+                            "label": {"type": "string"},
                             "payload": {"type": "string"},
                         },
                     },
@@ -771,35 +778,28 @@ def test_inheritance_keeps_parent_fields_on_parent(inherited: IRDocument) -> Non
     base = _decl(inherited, "Button")
     assert isinstance(base, IRModel)
     assert base.base_model is None
-    assert [f.name for f in base.fields] == ["type", "text"]
+    assert [f.name for f in base.fields] == ["type", "text", "label"]
 
     sub = _decl(inherited, "CallbackButton")
     assert sub.base_model == "Button"
-    # own fields only: the new ``payload`` and the pinned tag. ``text`` is restated by
-    # the spec purely to attach prose, so it is inherited rather than re-declared.
-    assert {f.name for f in sub.fields} == {"type", "payload"}
+    # Explicit child fields remain declarations even when they repeat a base field
+    assert {f.name for f in sub.fields} == {"type", "text", "label", "payload"}
 
 
-def test_inheritance_drops_redundant_restatement(inherited: IRDocument) -> None:
-    # ``CallbackButton`` restates ``text`` only to add a description. Re-emitting it
-    # would put ``text: str`` on the subclass shadowing an identical base attribute --
-    # noise at best, and a mypy ``[assignment]`` error as soon as the restatement
-    # differs at all (see ``test_inheritance_drops_widening_restatement``).
+def test_inheritance_keeps_explicit_restatement(inherited: IRDocument) -> None:
     sub = _decl(inherited, "CallbackButton")
-    assert "text" not in {f.name for f in sub.fields}
-    base = _decl(inherited, "Button")
-    assert isinstance(base, IRModel)
-    text = next(f for f in base.fields if f.name == "text")
+    text = next(f for f in sub.fields if f.name == "text")
+
     assert text.required is True
     assert text.type.annotation() == "str"
+    assert text.description == "Visible label."
+    assert text.incompatible_override is False
+    label = next(f for f in sub.fields if f.name == "label")
+    assert label.description is None
+    assert label.incompatible_override is False
 
 
-def test_inheritance_drops_widening_restatement() -> None:
-    """A subtype relaxing an inherited field must not emit an unsound override.
-
-    ``class C(P)`` with ``v: str | None`` over ``v: str`` is rejected by
-    ``mypy --strict``, so the subtype inherits the base's declaration instead.
-    """
+def test_inheritance_keeps_widening_restatement() -> None:
     spec: dict[str, Any] = {
         "openapi": "3.1.0",
         "info": {"title": "S", "version": "1.0.0"},
@@ -820,7 +820,8 @@ def test_inheritance_drops_widening_restatement() -> None:
     sub = _decl(ir, "C")
     assert isinstance(sub, IRModel)
     assert sub.base_model == "P"
-    assert sub.fields == []
+    assert [field.name for field in sub.fields] == ["v"]
+    assert sub.fields[0].incompatible_override is True
 
 
 def test_inheritance_keeps_narrowing_restatement() -> None:
@@ -901,7 +902,7 @@ def test_inheritance_multiple_refs_still_merge(inherited: IRDocument) -> None:
     # Two `$ref`s give no single parent to pick, so the merge behaviour is kept.
     mixed = _decl(inherited, "Mixed")
     assert mixed.base_model is None
-    assert {f.name for f in mixed.fields} == {"id", "type", "text"}
+    assert {f.name for f in mixed.fields} == {"id", "type", "text", "label"}
 
 
 def test_without_inheritance_parent_fields_are_merged() -> None:
@@ -910,7 +911,7 @@ def test_without_inheritance_parent_fields_are_merged() -> None:
     sub = _decl(ir, "CallbackButton")
     assert isinstance(sub, IRModel)
     assert sub.base_model is None
-    assert {f.name for f in sub.fields} == {"type", "text", "payload"}
+    assert {f.name for f in sub.fields} == {"type", "text", "label", "payload"}
     # the discriminated base collapses into a union alias, as before
     assert isinstance(_decl(ir, "Button"), IRAlias)
 
@@ -1111,8 +1112,8 @@ def test_inheritance_tag_is_pinned_as_the_enum_member_the_base_declares() -> Non
 def test_inheritance_checks_the_whole_base_chain() -> None:
     """A subclass carries only its own fields, so a grandparent's are one hop further.
 
-    ``C`` re-declares ``v`` as an integer over ``A``'s string. Looking only at the direct
-    parent ``B`` finds nothing and lets the unsound override through.
+    ``C`` re-declares ``v`` as an integer over ``A``'s string. Looking only at the
+    direct parent ``B`` finds nothing and misses the required assignment ignore
     """
     spec: dict[str, Any] = {
         "openapi": "3.1.0",
@@ -1137,7 +1138,10 @@ def test_inheritance_checks_the_whole_base_chain() -> None:
         },
     }
     ir = build_ir(spec, RefResolver(spec), inheritance=True)
-    assert [f.name for f in _decl(ir, "C").fields] == ["c"]
+    fields = _decl(ir, "C").fields
+
+    assert [field.name for field in fields] == ["v", "c"]
+    assert fields[0].incompatible_override is True
 
 
 def test_inheritance_renames_a_field_shadowing_an_inherited_identifier() -> None:
@@ -1311,7 +1315,8 @@ def test_inheritance_literal_over_a_mismatched_primitive_is_not_a_narrowing() ->
     )
     sub = _decl(build_ir(spec, RefResolver(spec), inheritance=True), "C")
     assert sub.base_model == "P"
-    assert sub.fields == []  # dropped as unsound; the int declaration is inherited
+    assert [field.name for field in sub.fields] == ["k"]
+    assert sub.fields[0].incompatible_override is True
 
     # the same restatement over a ``str`` base *is* a genuine narrowing and stays
     spec["components"]["schemas"]["P"]["properties"]["k"] = {"type": "string"}
@@ -1471,7 +1476,9 @@ def test_allof_cycle_merges_the_dropped_base_instead_of_losing_its_fields() -> N
         (LiteralType(("c",)), LiteralType(("a", "b")), False),
         # union base: narrowing any one member is enough
         (STR, UnionType((STR, INT)), True),
-        (BOOL, UnionType((STR, INT)), False),
+        # via the ``int`` member, since a bool is an int as far as mypy is concerned
+        (BOOL, UnionType((STR, INT)), True),
+        (FLOAT, UnionType((STR, INT)), False),
         # a Literal is answered against the base's *own* shape before the union branch
         # is reached, so this is a deliberate false no: the subtype inherits the wider
         # annotation instead of narrowing it. Safe, since a false yes emits code that
@@ -1480,6 +1487,15 @@ def test_allof_cycle_merges_the_dropped_base_instead_of_losing_its_fields() -> N
         # both optional: compare the inners
         (OptionalType(LiteralType(("a",))), OptionalType(STR), True),
         (OptionalType(STR), OptionalType(INT), False),
+        # mypy's numeric tower admits an integer wherever a float is expected, and a
+        # bool wherever an int is
+        (INT, FLOAT, True),
+        (BOOL, INT, True),
+        (FLOAT, INT, False),
+        # containers are invariant: a narrowed element is not a narrowed container
+        (ListType(INT), ListType(FLOAT), False),
+        # a $ref answers no without a declaration map to check the base chain in
+        (RefType("Dog"), RefType("Animal"), False),
     ],
 )
 def test_is_narrowing_type_shapes(sub: Any, base: Any, expected: bool) -> None:
@@ -1591,9 +1607,11 @@ def test_retype_discriminator_tag_leaves_non_enum_bases_alone() -> None:
     assert str_tag.type.annotation() == "Literal['one']"
     assert str_tag.default_expr is None
 
-    # a model-typed tag admits no member to pin, so the unsound Literal is dropped and
-    # the subtype inherits the base's declaration
-    assert [f.wire_name for f in _decl(ir, "ObjSub").fields] == ["b"]
+    # A model-typed tag admits no member to pin, so the explicit tag is kept with an
+    # assignment ignore
+    obj_fields = _decl(ir, "ObjSub").fields
+    assert [field.wire_name for field in obj_fields] == ["kind", "b"]
+    assert obj_fields[0].incompatible_override is True
 
     own = next(f for f in _decl(ir, "OwnLiteral").fields if f.wire_name == "mode")
     assert own.default_expr is None
@@ -1641,8 +1659,8 @@ def test_retype_discriminator_tag_needs_the_value_to_be_an_enum_member() -> None
     """A mapping key outside the base's enum leaves the tag alone.
 
     The spec is inconsistent -- it tags a subtype with a value the enum it typed the
-    property as does not admit -- so there is no member to pin and the unsound
-    ``Literal`` is dropped rather than guessed at.
+    property as does not admit - so there is no member to pin and the explicit
+    ``Literal`` is kept with an assignment ignore
     """
     spec = _hier(
         {
@@ -1666,4 +1684,110 @@ def test_retype_discriminator_tag_needs_the_value_to_be_an_enum_member() -> None
     )
     sub = _decl(build_ir(spec, RefResolver(spec), inheritance=True), "Sub")
     assert sub.base_model == "Base"
-    assert [f.wire_name for f in sub.fields] == ["a"]
+    assert [field.wire_name for field in sub.fields] == ["kind", "a"]
+    assert sub.fields[0].incompatible_override is True
+
+
+def test_required_narrowing_recomputes_inherited_assignment_ignore() -> None:
+    spec = _hier(
+        {
+            "A": {"type": "object", "properties": {"v": {"type": "string"}}},
+            "B": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/A"},
+                    {"properties": {"v": {"type": "integer"}}},
+                ]
+            },
+            "C": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/B"},
+                    {"required": ["v"]},
+                ]
+            },
+        }
+    )
+    ir = build_ir(spec, RefResolver(spec), inheritance=True)
+    b_field = next(field for field in _decl(ir, "B").fields if field.wire_name == "v")
+    c_field = next(field for field in _decl(ir, "C").fields if field.wire_name == "v")
+
+    assert b_field.incompatible_override is True
+    assert c_field.required is True
+    assert c_field.incompatible_override is False
+
+
+def test_inheritance_ref_narrowed_to_a_subclass_is_compatible() -> None:
+    """``Dog`` over ``Animal`` is a legal override once the base chain is consulted.
+
+    Both sides are a bare ``RefType``; only the declaration map says one subclasses the
+    other. Flagging it would put a suppression comment on a line mypy is happy with.
+    """
+    spec = _hier(
+        {
+            "Animal": {"type": "object", "properties": {"name": {"type": "string"}}},
+            "Dog": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/Animal"},
+                    {"properties": {"breed": {"type": "string"}}},
+                ]
+            },
+            "Keeper": {
+                "type": "object",
+                "required": ["pet"],
+                "properties": {"pet": {"$ref": "#/components/schemas/Animal"}},
+            },
+            "DogKeeper": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/Keeper"},
+                    {
+                        "required": ["pet"],
+                        "properties": {"pet": {"$ref": "#/components/schemas/Dog"}},
+                    },
+                ]
+            },
+        }
+    )
+    ir = build_ir(spec, RefResolver(spec), inheritance=True)
+    pet = next(field for field in _decl(ir, "DogKeeper").fields if field.wire_name == "pet")
+
+    assert pet.type.annotation() == "Dog"
+    assert pet.incompatible_override is False
+
+    # the same override the other way round *is* incompatible
+    schemas = spec["components"]["schemas"]
+    schemas["Keeper"]["properties"]["pet"] = {"$ref": "#/components/schemas/Dog"}
+    schemas["DogKeeper"]["allOf"][1]["properties"]["pet"] = {"$ref": "#/components/schemas/Animal"}
+    ir = build_ir(spec, RefResolver(spec), inheritance=True)
+    pet = next(field for field in _decl(ir, "DogKeeper").fields if field.wire_name == "pet")
+
+    assert pet.incompatible_override is True
+
+    # and a ``$ref`` to something that is not a class at all has no chain to walk
+    schemas["Kind"] = {"type": "string", "enum": ["dog", "cat"]}
+    schemas["DogKeeper"]["allOf"][1]["properties"]["pet"] = {"$ref": "#/components/schemas/Kind"}
+    ir = build_ir(spec, RefResolver(spec), inheritance=True)
+    pet = next(field for field in _decl(ir, "DogKeeper").fields if field.wire_name == "pet")
+
+    assert pet.incompatible_override is True
+
+
+def test_inheritance_integer_over_number_is_compatible() -> None:
+    spec = _hier(
+        {
+            "P": {
+                "type": "object",
+                "required": ["v"],
+                "properties": {"v": {"type": "number"}},
+            },
+            "C": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/P"},
+                    {"required": ["v"], "properties": {"v": {"type": "integer"}}},
+                ]
+            },
+        }
+    )
+    ir = build_ir(spec, RefResolver(spec), inheritance=True)
+    v = next(field for field in _decl(ir, "C").fields if field.wire_name == "v")
+
+    assert v.type.annotation() == "int"
+    assert v.incompatible_override is False

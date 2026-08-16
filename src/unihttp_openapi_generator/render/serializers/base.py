@@ -137,6 +137,23 @@ class SerializerStrategy(ABC):
             current = parent.base_model
         return names
 
+    @staticmethod
+    def override_suppression(f: IRField) -> str:
+        """Trailing comment for a field the subtype re-declares incompatibly.
+
+        ``unused-ignore`` is listed alongside ``assignment`` on purpose: the builder
+        decides whether an override is compatible from the IR alone, and the IR is a
+        coarser view of the type than mypy's. It has no notion of the numeric tower
+        beyond ``int``/``float``, and a ``$ref`` narrowed to a schema that is itself a
+        subtype resolves to a plain ``RefType`` whose relation to the base's is not
+        visible in the annotation. Whenever the builder is stricter than mypy the bare
+        ``[assignment]`` ignore would be unused, which ``--strict`` reports as an error
+        of its own -- so the comment silences its own redundancy.
+        """
+        if not f.incompatible_override:
+            return ""
+        return "  # type: ignore[assignment, unused-ignore]"
+
     # -- imports ---------------------------------------------------------------
 
     @abstractmethod

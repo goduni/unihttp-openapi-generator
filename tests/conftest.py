@@ -178,8 +178,9 @@ def hierarchy_spec() -> dict[str, Any]:
     real defect at some point: a discriminated base that keeps its own properties, a
     tag the base types as an enum (so the subtype's ``Literal`` is not assignable),
     restatements that only add prose / relax to nullable / change a default, wire names
-    that snake-case onto an inherited identifier, a three-level chain, and a base whose
-    own body refers back to its subtype.
+    that snake-case onto an inherited identifier, a three-level chain, a base whose own
+    body refers back to its subtype, and narrowings only the base chain or the numeric
+    tower can justify.
     """
     return {
         "openapi": "3.1.0",
@@ -337,6 +338,42 @@ def hierarchy_spec() -> dict[str, Any]:
                     "allOf": [
                         {"$ref": "#/components/schemas/Node"},
                         {"properties": {"value": {"type": "string"}}},
+                    ]
+                },
+                # A subtype narrowing a property to a schema that subclasses the base's:
+                # nothing in either annotation says ``Pet`` is a ``Creature``, so the
+                # override reads as incompatible unless the base chain is consulted.
+                "Creature": {
+                    "type": "object",
+                    "required": ["name"],
+                    "properties": {"name": {"type": "string"}},
+                },
+                "Pet": {
+                    "allOf": [
+                        {"$ref": "#/components/schemas/Creature"},
+                        {"properties": {"tame": {"type": "boolean"}}},
+                    ]
+                },
+                "Owner": {
+                    "type": "object",
+                    "required": ["companion", "score"],
+                    "properties": {
+                        "companion": {"$ref": "#/components/schemas/Creature"},
+                        "score": {"type": "number"},
+                    },
+                },
+                "PetOwner": {
+                    "allOf": [
+                        {"$ref": "#/components/schemas/Owner"},
+                        {
+                            "type": "object",
+                            "required": ["companion", "score"],
+                            "properties": {
+                                "companion": {"$ref": "#/components/schemas/Pet"},
+                                # the numeric tower: ``integer`` narrows ``number``
+                                "score": {"type": "integer"},
+                            },
+                        },
                     ]
                 },
             }

@@ -427,6 +427,44 @@ def test_models_without_inheritance_keep_positional_dataclasses() -> None:
     assert "@dataclass(kw_only=True)" not in source
 
 
+@pytest.mark.parametrize("serializer", list(Serializer))
+def test_incompatible_explicit_override_gets_local_ignore(
+    serializer: Serializer, tmp_path: Path
+) -> None:
+    spec: dict[str, Any] = {
+        "openapi": "3.1.0",
+        "info": {"title": "S", "version": "1.0.0"},
+        "paths": {},
+        "components": {
+            "schemas": {
+                "Parent": {
+                    "type": "object",
+                    "required": ["value"],
+                    "properties": {"value": {"type": "string"}},
+                },
+                "Child": {
+                    "allOf": [
+                        {"$ref": "#/components/schemas/Parent"},
+                        {
+                            "properties": {
+                                "value": {"type": ["string", "null"]},
+                            },
+                        },
+                    ],
+                },
+            },
+        },
+    }
+    ir = build_ir(spec, RefResolver(spec), inheritance=True)
+    source = render_models_module(ir, get_strategy(serializer))
+    line = next(line for line in source.splitlines() if "value: str | None" in line)
+
+    # ``unused-ignore`` rides along so the comment stays clean under ``mypy --strict``
+    # wherever mypy is more permissive than the IR's view of the two types.
+    assert line.endswith("  # type: ignore[assignment, unused-ignore]")
+    _load(source, tmp_path, f"incompatible_override_{serializer.value}")
+
+
 def test_discriminated_base_class_keeps_its_mapping_visible() -> None:
     """A base kept as a class must not swallow the discriminator it declares.
 

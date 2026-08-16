@@ -40,6 +40,13 @@ class IRField:
     read_only: bool = False
     write_only: bool = False
     constraints: dict[str, Any] = field(default_factory=dict)
+    incompatible_override: bool = False
+    """Whether this field re-declares an inherited one with a type the base does not admit.
+
+    A fact about the spec, not a rendering decision: the subtype asked for something
+    ``class Sub(Base)`` cannot express soundly. What to do about it belongs to the
+    serializer strategies (see ``override_suppression``).
+    """
 
     @property
     def needs_alias(self) -> bool:
