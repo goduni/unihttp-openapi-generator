@@ -421,6 +421,54 @@ def test_only_hierarchy_members_become_kw_only() -> None:
     assert "@dataclass(kw_only=True)\nclass Button:" in source
 
 
+_FIELD_PROSE_SPEC: dict[str, Any] = {
+    "openapi": "3.1.0",
+    "info": {"title": "S", "version": "1.0.0"},
+    "paths": {},
+    "components": {
+        "schemas": {
+            "Pet": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {
+                    "id": {"type": "integer", "description": "Server-assigned identifier."},
+                    "tag": {"type": "string"},
+                    "quote": {"type": "string", "description": 'He said "hi" with a \\ in it.'},
+                },
+            }
+        }
+    },
+}
+
+
+@pytest.mark.parametrize("serializer", list(Serializer))
+def test_field_prose_renders_as_an_attribute_docstring(
+    serializer: Serializer, tmp_path: Path
+) -> None:
+    """A property's ``description`` reaches the generated model, for every serializer.
+
+    An attribute docstring is inert at runtime -- the class body just evaluates a
+    string -- so the model still constructs and decodes exactly as it did.
+    """
+    source = _render(_FIELD_PROSE_SPEC, serializer)
+    lines = source.splitlines()
+    field_line = next(i for i, line in enumerate(lines) if line.strip().startswith("id: int"))
+
+    assert lines[field_line + 1] == '    """Server-assigned identifier."""'
+    # prose with quotes and a backslash survives without breaking the docstring
+    assert '    r"""He said "hi" with a \\ in it."""' in lines
+    module = _load(source, tmp_path, f"genmodels_prose_{serializer.value}")
+    assert module.Pet(id=1).id == 1
+
+
+@pytest.mark.parametrize("serializer", list(Serializer))
+def test_field_without_prose_gets_no_docstring(serializer: Serializer) -> None:
+    lines = _render(_FIELD_PROSE_SPEC, serializer).splitlines()
+    tag_line = next(i for i, line in enumerate(lines) if line.strip().startswith("tag:"))
+
+    assert not lines[tag_line + 1].strip().startswith('"""')
+
+
 def test_models_without_inheritance_keep_positional_dataclasses() -> None:
     ir = build_ir(_INHERITED_SPEC, RefResolver(_INHERITED_SPEC))
     source = render_models_module(ir, get_strategy(Serializer.ADAPTIX))

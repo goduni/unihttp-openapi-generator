@@ -22,5 +22,8 @@ class GetLatestRates(BaseMethod[ExchangeRates]):
     __method__ = "GET"
 
     base: Query[Omittable[str]] = Omitted()
+    """Base currency to quote against (default EUR)."""
     symbols: Query[Omittable[list[str]]] = Omitted()
+    """Limit the response to these target currencies."""
     amount: Query[Omittable[float]] = Omitted()
+    """Amount to convert (default 1)."""

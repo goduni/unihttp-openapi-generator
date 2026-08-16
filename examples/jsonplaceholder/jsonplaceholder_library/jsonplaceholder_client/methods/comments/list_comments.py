@@ -19,3 +19,4 @@ class ListComments(BaseMethod[list[Comment]]):
     __method__ = "GET"
 
     post_id: Query[Omittable[int]] = Omitted()
+    """Only comments on this post."""

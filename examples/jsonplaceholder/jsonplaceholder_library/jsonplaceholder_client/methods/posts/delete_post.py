@@ -17,3 +17,4 @@ class DeletePost(BaseMethod[dict[str, Any]]):
     __method__ = "DELETE"
 
     id: Path[int]
+    """Resource id."""

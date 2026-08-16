@@ -539,6 +539,15 @@ Notes:
   (excluded from request bodies).
 - Operations: path/query/header parameters with defaults, JSON/form/multipart bodies,
   file uploads, typed responses, and `deprecated`.
+- Prose: a schema's `description` becomes a class docstring, and a property's becomes a
+  PEP 258 attribute docstring under the field — so editors show it on hover:
+  ```python
+  class Pet(BaseModel):
+      id: int
+      """Server-assigned identifier."""
+  ```
+  The same already holds for parameters and body fields on request classes. Attribute
+  docstrings are inert at runtime, so nothing about construction or decoding changes.
 - Security: apiKey, http bearer/basic, oauth2, openIdConnect.
 
 ## Checking the output — `--check`

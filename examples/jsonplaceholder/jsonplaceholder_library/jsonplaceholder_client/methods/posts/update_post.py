@@ -18,6 +18,7 @@ class UpdatePost(BaseMethod[Post]):
     __method__ = "PUT"
 
     id: Path[int]
+    """Resource id."""
     user_id: Body[int]
     title: Body[str]
     body: Body[str]

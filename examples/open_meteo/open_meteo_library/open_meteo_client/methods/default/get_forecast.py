@@ -22,8 +22,14 @@ class GetForecast(BaseMethod[Forecast]):
     __method__ = "GET"
 
     latitude: Query[float]
+    """Latitude in decimal degrees."""
     longitude: Query[float]
+    """Longitude in decimal degrees."""
     current: Query[Omittable[list[str]]] = Omitted()
+    """Current-condition variables to return."""
     hourly: Query[Omittable[list[str]]] = Omitted()
+    """Hourly variables to return."""
     timezone: Query[Omittable[str]] = Omitted()
+    """Timezone name (e.g. UTC) or "auto"."""
     forecast_days: Query[Omittable[int]] = Omitted()
+    """Number of forecast days (1-16)."""

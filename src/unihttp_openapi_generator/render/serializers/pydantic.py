@@ -162,6 +162,7 @@ class PydanticStrategy(SerializerStrategy):
             lines.append("    pass")
         for f in model.fields:
             lines.append("    " + self._field_line(f) + self.override_suppression(f))
+            lines.extend(self.field_doc_lines(f))
         return "\n".join(lines)
 
     def _field_line(self, f: IRField) -> str:

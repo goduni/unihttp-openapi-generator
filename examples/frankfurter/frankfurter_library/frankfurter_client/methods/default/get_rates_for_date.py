@@ -24,6 +24,10 @@ class GetRatesForDate(BaseMethod[ExchangeRates]):
     __method__ = "GET"
 
     date: Path[str]
+    """ISO date, e.g. 2020-01-02."""
     base: Query[Omittable[str]] = Omitted()
+    """Base currency to quote against (default EUR)."""
     symbols: Query[Omittable[list[str]]] = Omitted()
+    """Limit the response to these target currencies."""
     amount: Query[Omittable[float]] = Omitted()
+    """Amount to convert (default 1)."""
