@@ -155,7 +155,7 @@ class SerializerStrategy(ABC):
         return "  # type: ignore[assignment, unused-ignore]"
 
     @staticmethod
-    def field_doc_lines(f: IRField, indent: str = "    ") -> list[str]:
+    def field_doc_lines(f: IRField) -> list[str]:
         """A field's schema prose as a PEP 258 attribute docstring.
 
         The same device the method classes already use for parameters and body fields,
@@ -165,8 +165,10 @@ class SerializerStrategy(ABC):
         pydantic would need ``Field(description=...)`` on every documented field,
         msgspec an ``Annotated[..., Meta(description=...)]``, and adaptix has no
         equivalent at all.
+
+        Rendered at the class-body indent, which is where every strategy puts it.
         """
-        doc = docstring(f.description, indent)
+        doc = docstring(f.description, "    ")
         if not doc:
             return []
         return doc.rstrip("\n").split("\n")
