@@ -589,6 +589,9 @@ uv run ruff check src tests
 uv run mypy
 ```
 
+Release notes, including the breaking changes between versions, live in
+[CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 MIT
