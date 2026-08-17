@@ -75,6 +75,7 @@ class MsgspecStrategy(SerializerStrategy):
         fields = sorted(model.fields, key=self._sort_key)
         for f in fields:
             lines.append("    " + self._field_line(f) + self.override_suppression(f))
+            lines.extend(self.field_doc_lines(f))
         if not fields and not doc:
             lines.append("    pass")
         return "\n".join(lines)

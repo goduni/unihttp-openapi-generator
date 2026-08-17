@@ -18,3 +18,4 @@ class GetTodo(BaseMethod[Todo]):
     __method__ = "GET"
 
     id: Path[int]
+    """Resource id."""

@@ -19,3 +19,4 @@ class ListTodos(BaseMethod[list[Todo]]):
     __method__ = "GET"
 
     user_id: Query[Omittable[int]] = Omitted()
+    """Only todos for this user."""

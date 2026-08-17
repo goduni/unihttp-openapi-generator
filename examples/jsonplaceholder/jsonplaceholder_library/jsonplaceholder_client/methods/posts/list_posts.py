@@ -19,3 +19,4 @@ class ListPosts(BaseMethod[list[Post]]):
     __method__ = "GET"
 
     user_id: Query[Omittable[int]] = Omitted()
+    """Only posts by this user."""

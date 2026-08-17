@@ -124,7 +124,15 @@ def sample_spec() -> dict[str, Any]:
                     "required": ["id", "name"],
                     "properties": {
                         "id": {"type": "integer"},
-                        "name": {"type": "string"},
+                        # Prose long enough to wrap, so the compile gate checks the
+                        # rendered attribute docstring against ruff's default width.
+                        "name": {
+                            "type": "string",
+                            "description": (
+                                "The pet's display name, as the shelter recorded it "
+                                'when the animal was taken in. May contain "quotes".'
+                            ),
+                        },
                         "status": {"type": "string", "enum": ["available", "sold"]},
                         "createdAt": {"type": "string", "format": "date-time"},
                         "tag": {"type": ["string", "null"]},

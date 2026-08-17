@@ -18,3 +18,4 @@ class GetUser(BaseMethod[User]):
     __method__ = "GET"
 
     id: Path[int]
+    """Resource id."""

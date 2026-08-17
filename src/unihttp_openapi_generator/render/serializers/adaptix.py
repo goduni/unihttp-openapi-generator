@@ -64,6 +64,7 @@ class AdaptixStrategy(SerializerStrategy):
         for f in fields:
             line = self._field_line(f.name, f.type.annotation(), f, inherited)
             lines.append("    " + line + self.override_suppression(f))
+            lines.extend(self.field_doc_lines(f))
         return "\n".join(lines)
 
     @staticmethod

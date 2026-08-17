@@ -23,7 +23,12 @@ class GetTimeSeries(BaseMethod[TimeSeriesRates]):
     __method__ = "GET"
 
     start_date: Path[str]
+    """ISO start date, e.g. 2020-01-01."""
     end_date: Path[str]
+    """ISO end date, e.g. 2020-01-31."""
     base: Query[Omittable[str]] = Omitted()
+    """Base currency to quote against (default EUR)."""
     symbols: Query[Omittable[list[str]]] = Omitted()
+    """Limit the response to these target currencies."""
     amount: Query[Omittable[float]] = Omitted()
+    """Amount to convert (default 1)."""

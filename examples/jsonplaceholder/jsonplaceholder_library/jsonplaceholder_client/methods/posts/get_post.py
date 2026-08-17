@@ -18,3 +18,4 @@ class GetPost(BaseMethod[Post]):
     __method__ = "GET"
 
     id: Path[int]
+    """Resource id."""

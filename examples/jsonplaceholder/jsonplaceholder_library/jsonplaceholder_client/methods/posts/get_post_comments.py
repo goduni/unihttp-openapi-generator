@@ -18,3 +18,4 @@ class GetPostComments(BaseMethod[list[Comment]]):
     __method__ = "GET"
 
     id: Path[int]
+    """Resource id."""

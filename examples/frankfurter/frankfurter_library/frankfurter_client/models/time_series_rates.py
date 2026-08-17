@@ -15,3 +15,4 @@ class TimeSeriesRates:
     start_date: date
     end_date: date
     rates: dict[str, dict[str, float]]
+    """ISO date -> (currency code -> rate)."""
