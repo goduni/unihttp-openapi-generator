@@ -25,11 +25,21 @@ class CheckError(Exception):
     """Raised when ``--check`` finds problems in the generated package."""
 
 
-def _run_check(tool: str, command: list[str], package_dir: Path) -> None:
-    result = subprocess.run([*command, str(package_dir)], capture_output=True, text=True)
+def _run_check(tool: str, command: list[str], target: Path, cwd: Path | None = None) -> None:
+    """Run a checker over ``target``; ``cwd`` decides how it is named on the command line.
+
+    With a ``cwd`` the target is passed as a bare name relative to it, which is the
+    whole point for mypy: under ``--explicit-package-bases`` it derives module names
+    relative to the working directory, so checking ``out/acme_client`` from the project
+    root made the package ``out.acme_client`` and left every intra-package import --
+    each of which spells the package's real name -- unresolvable. Running from ``out/``
+    makes it ``acme_client``, which is what the package calls itself.
+    """
+    argument = target.name if cwd is not None else str(target)
+    result = subprocess.run([*command, argument], capture_output=True, text=True, cwd=cwd)
     if result.returncode != 0:
-        raise CheckError(f"{tool} check failed for {package_dir}:\n{result.stdout}{result.stderr}")
-    logger.info("%s check passed for %s", tool, package_dir)
+        raise CheckError(f"{tool} check failed for {target}:\n{result.stdout}{result.stderr}")
+    logger.info("%s check passed for %s", tool, target)
 
 
 def _mypy_args() -> list[str]:
@@ -55,7 +65,8 @@ def _check_package(package_dir: Path, *, stubs: bool, config_path: Path | None =
     # them, failing this gate on output that was correct), and never against whatever
     # config the cwd happens to carry, which belongs to whoever ran the generator.
     _run_check("ruff", [ruff_executable(), "check", *config_args(config_path)], package_dir)
-    _run_check("mypy", [*mypy_command(), *_mypy_args()], package_dir)
+    root = package_dir.parent
+    _run_check("mypy", [*mypy_command(), *_mypy_args()], package_dir, root)
     if stubs:
         # ``client.pyi`` makes mypy skip ``client.py`` entirely, so the run above
         # checks what a consumer sees and nothing of the module that actually runs.
@@ -64,6 +75,7 @@ def _check_package(package_dir: Path, *, stubs: bool, config_path: Path | None =
             "mypy (implementation)",
             [*mypy_command(), *_mypy_args(), "--exclude", r"client\.pyi$"],
             package_dir,
+            root,
         )
 
 

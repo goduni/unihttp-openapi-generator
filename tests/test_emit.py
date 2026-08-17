@@ -116,8 +116,16 @@ def test_generated_stub_is_ruff_clean(spec_file: Path, tmp_path: Path) -> None:
         str(spec_file),
         GeneratorConfig(package_name="lint_client", output_dir=out, stubs=True),
     )
+    # Against the package's own config -- ``--isolated`` would check the stub under
+    # ruff's defaults, which is neither what ``--check`` does nor a fixed target.
     result = subprocess.run(
-        [ruff_executable(), "check", "--isolated", str(out / "lint_client" / "client.pyi")],
+        [
+            ruff_executable(),
+            "check",
+            "--config",
+            str(out / "pyproject.toml"),
+            str(out / "lint_client" / "client.pyi"),
+        ],
         capture_output=True,
         text=True,
     )

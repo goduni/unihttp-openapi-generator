@@ -86,7 +86,7 @@ pip install ./out
 from acme_client import AcmeClient
 
 with AcmeClient(base_url="https://api.example.com", token="...") as client:
-    pet = client.pets.get_pet(pet_id=1)   # -> a typed model
+    pet = client.pets.get_pet(pet_id=1)  # -> a typed model
     print(pet.name)
 ```
 
@@ -136,6 +136,7 @@ class GetBooking(BaseMethod[GetBookingResponse]):
 
     Returns the details of a specific booking.
     """
+
     __url__ = "/bookings/{bookingId}"
     __method__ = "GET"
 
@@ -143,10 +144,14 @@ class GetBooking(BaseMethod[GetBookingResponse]):
 
 
 class TrainTravelAPIClient(RequestsSyncClient):
-    def __init__(self, base_url: str = DEFAULT_BASE_URL, *,
-                 session: Any = None, middleware: list[Any] | None = None,
-                 token: str | None = None) -> None:
-        ...
+    def __init__(
+        self,
+        base_url: str = DEFAULT_BASE_URL,
+        *,
+        session: Any = None,
+        middleware: list[Any] | None = None,
+        token: str | None = None,
+    ) -> None: ...
 ```
 
 ## Using the client
@@ -157,7 +162,7 @@ Clients are context managers and close their transport on exit.
 from acme_client import AcmeClient
 
 with AcmeClient(base_url="https://api.example.com", token="secret") as client:
-    booking = client.bookings.get_booking(booking_id=some_uuid)   # grouped layout
+    booking = client.bookings.get_booking(booking_id=some_uuid)  # grouped layout
     # client.get_booking(...)   # flat layout
 ```
 
@@ -167,9 +172,11 @@ Async clients expose the same surface; their methods are awaitables:
 import asyncio
 from acme_client import AsyncAcmeClient
 
+
 async def main() -> None:
     async with AsyncAcmeClient(token="secret") as client:
         trips = await client.trips.get_trips(origin=a, destination=b, date=when)
+
 
 asyncio.run(main())
 ```
@@ -231,6 +238,7 @@ Pass any unihttp middleware; auth and error mapping are composed around it.
 
 ```python
 from unihttp.middlewares.retry import RetryMiddleware
+
 client = AcmeClient(middleware=[RetryMiddleware(retries=3)])
 ```
 
@@ -374,10 +382,12 @@ How client methods are written.
 - `imperative` — an explicit, fully-typed wrapper per operation. More generated code,
   but the signature is spelled out for the best editor experience:
   ```python
-  def get_trips(self, *, origin: UUID, destination: UUID, date: datetime,
-                page: int = 1, limit: int = 10) -> GetTripsResponse:
-      return self.call_method(GetTrips(origin=origin, destination=destination,
-                                       date=date, page=page, limit=limit))
+  def get_trips(
+      self, *, origin: UUID, destination: UUID, date: datetime, page: int = 1, limit: int = 10
+  ) -> GetTripsResponse:
+      return self.call_method(
+          GetTrips(origin=origin, destination=destination, date=date, page=page, limit=limit)
+      )
   ```
 
 If you are reaching for `imperative` only because your editor cannot see through
@@ -409,9 +419,10 @@ What to do with `allOf: [{$ref: Base}, ...]`.
   ```python
   @dataclass
   class CallbackButton:
-      text: str                              # copied from Button
+      text: str  # copied from Button
       payload: str
-      type: Literal['callback'] = 'callback'
+      type: Literal["callback"] = "callback"
+
 
   type Button = CallbackButton | LinkButton
   ```
@@ -423,10 +434,11 @@ What to do with `allOf: [{$ref: Base}, ...]`.
       type: str
       text: str
 
+
   @dataclass(kw_only=True)
   class CallbackButton(Button):
       payload: str
-      type: Literal['callback'] = 'callback'
+      type: Literal["callback"] = "callback"
   ```
   `isinstance` then works across the hierarchy, and a subtype's own properties stay in
   one place instead of being copied into every variant.

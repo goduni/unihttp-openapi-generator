@@ -193,6 +193,29 @@ def test_generation_is_deterministic(spec_file: Path, tmp_path: Path, stubs: boo
     assert sources_a == sources_b
 
 
+def test_check_passes_when_generating_beneath_the_working_directory(
+    spec_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--check`` must survive the ordinary invocation: ``--output-dir ./out``.
+
+    Under ``--explicit-package-bases`` mypy derives module names relative to the working
+    directory whenever the files sit beneath it, so a package generated into ``out/``
+    from the project root came out as ``out.acme_client`` -- and every intra-package
+    import, which spells the package's real name, was unresolvable. The result was
+    ``--check`` reporting a correct package as broken, in what is the most obvious way
+    to run the generator.
+
+    The other gates here escape it only because pytest's ``tmp_path`` is nowhere near
+    the working directory.
+    """
+    monkeypatch.chdir(tmp_path)
+
+    run_generation(
+        str(spec_file),
+        GeneratorConfig(package_name="cwd_client", output_dir=Path("out"), check=True),
+    )
+
+
 def test_generation_ignores_an_ambient_ruff_config(
     spec_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

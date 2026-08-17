@@ -22,8 +22,20 @@ change bumps the minor version.
   own `line-length` came out wrapped differently from the same client generated
   anywhere else. Generation is deterministic again, which the README always claimed.
 
-Both come from the same root: the generated package had no lint configuration of its
-own, so the tools reached for whatever was around. It has one now.
+- **`--check` reported a correct package as broken when generating into `./out`.**
+  mypy runs with `--explicit-package-bases`, under which module names are derived
+  relative to the working directory: a package generated beneath it became
+  `out.acme_client`, so every intra-package import — each spelling the package's real
+  name — was unresolvable. It now runs from the package's parent. This was hidden
+  behind the ruff failure above, which came first.
+
+The first two come from the same root: the generated package had no lint configuration
+of its own, so the tools reached for whatever was around. It has one now.
+
+All three were invisible to CI, which pins `ruff` and `mypy` in `uv.lock` while the
+generator declares open lower bounds — so the gate ran old versions of both while every
+fresh install got new ones. The pinned versions have been brought up to date, and the
+gate now checks what a user actually gets.
 
 ### Changed
 

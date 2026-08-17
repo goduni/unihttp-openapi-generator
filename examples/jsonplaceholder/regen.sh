@@ -12,9 +12,11 @@ cd "$(dirname "$0")"
 
 unihttp-openapi-generator generate
 
-# Quality gate. Run ruff + mypy from *inside* the library directory so that
+# Quality gate: the same one `--check` runs. ruff reads the package's own config --
+# its rules are part of the generated package -- and both tools run from *inside* the
+# library directory so that
 # `jsonplaceholder_client` resolves as the top-level package.
 cd jsonplaceholder_library
-ruff check --isolated jsonplaceholder_client
+ruff check --config pyproject.toml jsonplaceholder_client
 mypy --strict --disable-error-code no-untyped-call --explicit-package-bases jsonplaceholder_client
 echo "regen OK"
