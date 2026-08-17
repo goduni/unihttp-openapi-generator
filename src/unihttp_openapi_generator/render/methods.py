@@ -160,7 +160,11 @@ def method_signature(op: IROperation, attr: str, *, is_async: bool) -> str:
     signature = ", ".join([receiver, "*", *params]) if params else receiver
     return_anno = op.return_type.annotation() if op.return_type is not None else "None"
     prefix = "async def" if is_async else "def"
-    return f"{prefix} {attr}({signature}) -> {return_anno}:"
+    # A receiver that had to move aside for a parameter named ``self`` is the one place
+    # the generated client knowingly breaks the naming rule its own lint config enforces
+    # -- silence it here rather than switching N805 off for every method in the package.
+    noqa = "  # noqa: N805" if receiver != "self" else ""
+    return f"{prefix} {attr}({signature}) -> {return_anno}:{noqa}"
 
 
 def signatures_use_omitted(ops: list[IROperation]) -> bool:

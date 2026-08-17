@@ -5,6 +5,44 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) — while at `0.x`, a breaking
 change bumps the minor version.
 
+## [0.3.1] — 2026-08-17
+
+### Fixed
+
+- **`--check` failed on correct output.** It linted the generated package against
+  ruff's *default* rule selection, which is not a fixed target: ruff 0.16 folded the
+  `RUF` rules into it, and since the generator declares `ruff>=0.6.0`, any fresh
+  install picked that up. Every generated package failed its own gate on both 0.2.0 and
+  0.3.0 — `RUF009` on the `Omitted()` sentinel (a singleton, so the rule's premise does
+  not hold) and `RUF022` on `__all__` ordering.
+
+- **The same spec produced different bytes depending on where you ran the generator.**
+  The formatting pass let ruff discover config the way ruff normally does — from the
+  working directory and its parents — so a client generated inside a project with its
+  own `line-length` came out wrapped differently from the same client generated
+  anywhere else. Generation is deterministic again, which the README always claimed.
+
+Both come from the same root: the generated package had no lint configuration of its
+own, so the tools reached for whatever was around. It has one now.
+
+### Changed
+
+- Generated `pyproject.toml` carries a `[tool.ruff]` table, and both the formatting pass
+  and `--check` read it — never ruff's defaults, never an ambient config. The rule set
+  is broad and was verified against generated packages across every serializer, both
+  file layouts, both method styles, both optional styles, and with and without
+  inheritance and stubs. What it disables, it disables because the *spec* decides it:
+  parameter names come from the wire (`id`, `type`), `Omitted()` is a singleton rather
+  than a mutable default, method size follows the operation's parameter count, and
+  forward references are resolved by deferred imports.
+
+  Regenerating an existing client will therefore show a new section in its
+  `pyproject.toml`, and reformatting if it was generated inside a project whose
+  `line-length` differed from 88.
+
+- `__all__` is emitted in the order linters expect (constants, then classes) rather than
+  plain alphabetical.
+
 ## [0.3.0] — 2026-08-17
 
 ### Breaking
@@ -75,6 +113,7 @@ change bumps the minor version.
 
 Initial release.
 
+[0.3.1]: https://github.com/goduni/unihttp-openapi-generator/releases/tag/v0.3.1
 [0.3.0]: https://github.com/goduni/unihttp-openapi-generator/releases/tag/v0.3.0
 [0.2.0]: https://github.com/goduni/unihttp-openapi-generator/releases/tag/v0.2.0
 [0.1.0]: https://github.com/goduni/unihttp-openapi-generator/releases/tag/v0.1.0

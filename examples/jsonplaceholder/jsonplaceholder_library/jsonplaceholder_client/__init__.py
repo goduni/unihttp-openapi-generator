@@ -8,4 +8,4 @@ from jsonplaceholder_client.client import (
     JSONPlaceholderClient,
 )
 
-__all__ = ["DEFAULT_BASE_URL", "JSONPlaceholderClient", "SERVERS"]
+__all__ = ["DEFAULT_BASE_URL", "SERVERS", "JSONPlaceholderClient"]

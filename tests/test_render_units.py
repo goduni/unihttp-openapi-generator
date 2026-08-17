@@ -203,3 +203,21 @@ def test_non_object_json_body_becomes_single_body_field() -> None:
     assert [f.py_name for f in fields] == ["body"]
     assert fields[0].marker == "Body"
     assert fields[0].inner == "list[str]"
+
+
+def test_dunder_all_is_ordered_the_way_linters_expect() -> None:
+    """``__all__`` groups constants, then classes, then everything else.
+
+    Plain ``sorted()`` is the obvious choice and the wrong one: the generated package
+    is linted against the config the generator writes into it, and that config checks
+    ``__all__`` ordering.
+    """
+    from unihttp_openapi_generator.render.imports import render_dunder_all
+
+    rendered = render_dunder_all(
+        ["zeta_func", "BClass", "A_CONST", "alpha_func", "Z_CONST", "CClass"]
+    )
+
+    assert rendered == (
+        "__all__ = ['A_CONST', 'Z_CONST', 'BClass', 'CClass', 'alpha_func', 'zeta_func']"
+    )

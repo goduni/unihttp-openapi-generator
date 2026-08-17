@@ -15,3 +15,19 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["frankfurter_client"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "A", "ARG", "B", "C4", "DTZ", "E", "F", "I", "ICN", "ISC", "N",
+    "PIE", "PL", "PTH", "Q", "RET", "RUF", "SIM", "SLF", "T20", "UP", "W",
+]
+ignore = [
+    "A002", "B008", "PLC0415", "PLR0911", "PLR0912", "PLR0913", "PLR0915", "RUF009",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"*.pyi" = ["PIE790"]

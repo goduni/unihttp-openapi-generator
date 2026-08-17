@@ -1564,7 +1564,7 @@ source = { git = "https://github.com/goduni/unihttp.git#c5b54e7262debe88c681e956
 
 [[package]]
 name = "unihttp-openapi-generator"
-version = "0.3.0"
+version = "0.3.1"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

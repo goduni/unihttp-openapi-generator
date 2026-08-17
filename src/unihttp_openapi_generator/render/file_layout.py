@@ -18,7 +18,7 @@ from unihttp_openapi_generator.ir.naming import NameRegistry, to_snake_case
 from unihttp_openapi_generator.ir.operations import IROperation
 from unihttp_openapi_generator.ir.types import Import
 from unihttp_openapi_generator.render.engine import render_template
-from unihttp_openapi_generator.render.imports import render_import_lines
+from unihttp_openapi_generator.render.imports import render_dunder_all, render_import_lines
 from unihttp_openapi_generator.render.methods import render_method_class, tag_module_name
 from unihttp_openapi_generator.render.serializers.base import SerializerStrategy
 
@@ -169,7 +169,7 @@ def render_models_init(doc: IRDocument, package: str, plan: LayoutPlan) -> str:
         names.append(decl.name)
         lines.append(f"from {plan.model_dotted(package, decl.name)} import {decl.name}")
     lines.append("")
-    lines.append(f"__all__ = {sorted(names)!r}")
+    lines.append(render_dunder_all(names))
     return "\n".join(lines) + "\n"
 
 
@@ -186,7 +186,7 @@ def render_tag_init(doc: IRDocument, tag: str, package: str, plan: LayoutPlan) -
         names.append(op.class_name)
         lines.append(f"from {plan.method_dotted(package, op.class_name)} import {op.class_name}")
     lines.append("")
-    lines.append(f"__all__ = {sorted(names)!r}")
+    lines.append(render_dunder_all(names))
     return "\n".join(lines) + "\n"
 
 
@@ -199,7 +199,7 @@ def render_methods_init(doc: IRDocument, package: str) -> str:
         all_names.extend(names)
         lines.append(f"from {package}.methods.{tag_module_name(tag)} import {', '.join(names)}")
     lines.append("")
-    lines.append(f"__all__ = {sorted(all_names)!r}")
+    lines.append(render_dunder_all(all_names))
     return "\n".join(lines) + "\n"
 
 

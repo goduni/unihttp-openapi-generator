@@ -556,10 +556,33 @@ Notes:
 [`--stubs`](#type-stubs----stubs) it runs `mypy` a second time with `client.pyi`
 excluded, so the runtime module a stub would otherwise hide stays checked too.
 
+`ruff` reads the `[tool.ruff]` table the generator writes into the package's own
+`pyproject.toml` — never ruff's built-in defaults, which change between ruff releases,
+and never a config discovered from the working directory, which belongs to whoever ran
+the generator. The same table also settles how the output is formatted, which is what
+makes generation reproducible (see [Formatting](#formatting)).
+
 Both tools are ordinary dependencies of the generator, so installing it installs them —
 there is nothing extra to add. They are also resolved from the generator's *own*
 environment rather than from `PATH`, so an unrelated `ruff` or `mypy` installed
 system-wide can never take over and lint the output by different rules.
+
+### Formatting
+
+The generated `pyproject.toml` carries a `[tool.ruff]` table, and every generated file
+is formatted and linted against it. That is the whole reason the same spec produces the
+same bytes wherever you run the generator: the alternative — letting ruff discover
+config the way it normally does — wraps the output at the `line-length` of whatever
+project happens to be around it.
+
+The rule set is deliberately broad, and what it switches off it switches off because the
+*spec* decides it, not the generator: parameter names come from the wire (`id`, `type`),
+`Omitted()` is a singleton rather than a mutable default, and forward references are
+resolved by deferred imports.
+
+Like everything else in the package, the table is generated: regenerating rewrites
+`pyproject.toml`, so keep local lint preferences in the project that *consumes* the
+client rather than in the client itself.
 
 One thing to know if you installed the generator standalone (`uv tool install`, `pipx`):
 `mypy --strict` has to resolve the generated code's imports — `unihttp` and your chosen

@@ -10,6 +10,7 @@ from unihttp_openapi_generator.config import GeneratorConfig, OptionalStyle
 from unihttp_openapi_generator.emit import write_package
 from unihttp_openapi_generator.ir.builder import build_ir
 from unihttp_openapi_generator.loader import load_spec
+from unihttp_openapi_generator.postprocess import config_args
 from unihttp_openapi_generator.refs import RefResolver
 from unihttp_openapi_generator.tooling import (
     mypy_command,
@@ -48,11 +49,12 @@ def _mypy_args() -> list[str]:
     return args
 
 
-def _check_package(package_dir: Path, *, stubs: bool) -> None:
-    # Generated packages ship without a ``[tool.ruff]`` table and are meant to lint
-    # under ruff's defaults; ``--isolated`` ignores any ambient config that ruff
-    # would otherwise discover from the cwd/parent dirs.
-    _run_check("ruff", [ruff_executable(), "check", "--isolated"], package_dir)
+def _check_package(package_dir: Path, *, stubs: bool, config_path: Path | None = None) -> None:
+    # Lint the package against the ``[tool.ruff]`` table written into it, never against
+    # ruff's defaults: those are not a fixed target (0.16 folded the ``RUF`` rules into
+    # them, failing this gate on output that was correct), and never against whatever
+    # config the cwd happens to carry, which belongs to whoever ran the generator.
+    _run_check("ruff", [ruff_executable(), "check", *config_args(config_path)], package_dir)
     _run_check("mypy", [*mypy_command(), *_mypy_args()], package_dir)
     if stubs:
         # ``client.pyi`` makes mypy skip ``client.py`` entirely, so the run above
@@ -80,5 +82,7 @@ def run_generation(spec_source: str, config: GeneratorConfig) -> Path:
     root = write_package(doc, config)
     logger.info("generated %s client at %s", config.package_name, root)
     if config.check:
-        _check_package(root / config.package_name, stubs=config.stubs)
+        _check_package(
+            root / config.package_name, stubs=config.stubs, config_path=root / "pyproject.toml"
+        )
     return root

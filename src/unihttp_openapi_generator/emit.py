@@ -29,6 +29,7 @@ from unihttp_openapi_generator.render.file_layout import (
     render_models_init,
     render_tag_init,
 )
+from unihttp_openapi_generator.render.imports import render_dunder_all
 from unihttp_openapi_generator.render.methods import render_methods_module, tag_module_name
 from unihttp_openapi_generator.render.models import render_models_module
 from unihttp_openapi_generator.render.query import deep_object_query_keys, render_query_module
@@ -64,7 +65,7 @@ def _render_methods_init(doc: IRDocument, package: str) -> str:
         joined = ", ".join(names)
         lines.append(f"from {package}.methods.{tag_module_name(tag)} import {joined}")
     lines.append("")
-    lines.append(f"__all__ = {sorted(all_names)!r}")
+    lines.append(render_dunder_all(all_names))
     return "\n".join(lines) + "\n"
 
 
@@ -86,7 +87,7 @@ def _render_package_init(doc: IRDocument, config: GeneratorConfig, package: str)
         exports.extend(client_exports)
         lines.append(f"from {package}.client import {', '.join(client_exports)}")
     lines.append("")
-    lines.append(f"__all__ = {sorted(exports)!r}")
+    lines.append(render_dunder_all(exports))
     return "\n".join(lines) + "\n"
 
 
@@ -115,8 +116,55 @@ def _render_pyproject(doc: IRDocument, config: GeneratorConfig) -> str:
         'requires = ["hatchling"]\n'
         'build-backend = "hatchling.build"\n\n'
         "[tool.hatch.build.targets.wheel]\n"
-        f'packages = ["{config.package_name}"]\n'
+        f'packages = ["{config.package_name}"]\n\n' + _RUFF_CONFIG
     )
+
+
+# The lint contract for the emitted package, written into it rather than applied from
+# inside the generator: both the formatting pass and ``--check`` read this table, so the
+# same spec yields the same bytes wherever the generator runs, and what the package
+# promises is visible in the package. Neither tool may fall back on ruff's own defaults,
+# which are not a fixed target -- 0.16 added the ``RUF`` rules to them and broke
+# ``--check`` on output that was, and still is, correct.
+#
+# Like the rest of the package it is regenerated, so it is a statement about the
+# generated code, not a place to keep local preferences.
+#
+# Every rule here was measured against generated packages across all serializers, both
+# file layouts, both optional styles, both method styles, with and without inheritance
+# and stubs. What is switched off is off because the spec, not the generator, decides it:
+#   ``TC``       wants annotations-only imports moved into ``if TYPE_CHECKING``, but the
+#                per-object layout decides exactly which imports must stay at runtime
+#                (base classes, method return types) for the serializers to resolve them;
+#   ``A002``     flags an argument shadowing a builtin -- but parameter names come from
+#                the wire, and ``id``/``type``/``filter`` are everywhere in real APIs;
+#   ``B008``     and ``RUF009`` flag a call in a default, aimed at a fresh mutable being
+#                shared. ``Omitted()`` is a singleton, so there is nothing to share;
+#   ``PLC0415``  flags a deferred import, which is how forward-ref resolution works here;
+#   ``PLR09*``   caps arguments, branches, returns and statements. An operation with six
+#                query parameters gets a six-argument method under ``--style imperative``;
+#                the size of generated code is the spec's business, not a code smell;
+#   ``PIE790``   calls a stub's ``...`` redundant next to a docstring, which is only true
+#                if you do not write stubs the way everyone writes stubs;
+#   ``ERA``      reads any comment shaped like an assignment as commented-out code, and
+#                the discriminator note above a union alias (``# discriminator: kind
+#                (new=NewPet, pet=Pet)``) is exactly that shape while being the point.
+_RUFF_CONFIG = """[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "A", "ARG", "B", "C4", "DTZ", "E", "F", "I", "ICN", "ISC", "N",
+    "PIE", "PL", "PTH", "Q", "RET", "RUF", "SIM", "SLF", "T20", "UP", "W",
+]
+ignore = [
+    "A002", "B008", "PLC0415", "PLR0911", "PLR0912", "PLR0913", "PLR0915", "RUF009",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"*.pyi" = ["PIE790"]
+"""
 
 
 def _render_readme(doc: IRDocument, config: GeneratorConfig) -> str:
@@ -215,9 +263,14 @@ def write_package(doc: IRDocument, config: GeneratorConfig) -> Path:
     _write_py(package_dir / "__init__.py", _render_package_init(doc, config, package))
     (package_dir / "py.typed").write_text("")
 
-    (project_root / "pyproject.toml").write_text(_render_pyproject(doc, config))
+    pyproject = project_root / "pyproject.toml"
+    pyproject.write_text(_render_pyproject(doc, config))
     (project_root / "README.md").write_text(_render_readme(doc, config))
 
-    # Final project-aware pass: groups first-party imports consistently on disk.
-    format_path(package_dir)
+    # Final pass, and the authoritative one: it groups first-party imports consistently
+    # on disk and settles the formatting of every file under the config just written, so
+    # the bytes depend on the package, not on where the generator happened to run. The
+    # per-file pass above cannot use it -- the config does not exist yet at that point --
+    # so it runs isolated, and this pass formats over whatever it produced.
+    format_path(package_dir, pyproject)
     return project_root

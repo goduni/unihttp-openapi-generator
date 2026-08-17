@@ -8,4 +8,4 @@ from open_meteo_client.client import (
     AsyncOpenMeteoForecastAPIClient,
 )
 
-__all__ = ["AsyncOpenMeteoForecastAPIClient", "DEFAULT_BASE_URL", "SERVERS"]
+__all__ = ["DEFAULT_BASE_URL", "SERVERS", "AsyncOpenMeteoForecastAPIClient"]

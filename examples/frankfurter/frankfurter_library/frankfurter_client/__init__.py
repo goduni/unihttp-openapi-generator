@@ -4,4 +4,4 @@ from __future__ import annotations
 
 from frankfurter_client.client import DEFAULT_BASE_URL, SERVERS, FrankfurterAPIClient
 
-__all__ = ["DEFAULT_BASE_URL", "FrankfurterAPIClient", "SERVERS"]
+__all__ = ["DEFAULT_BASE_URL", "SERVERS", "FrankfurterAPIClient"]

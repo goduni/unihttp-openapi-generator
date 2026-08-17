@@ -48,9 +48,20 @@ def _collect_sources(root: Path) -> dict[str, str]:
 
 
 def _assert_ruff_clean(package_dir: Path) -> None:
+    """Lint the package against the config the generator wrote into it.
+
+    Not against this repository's, which is what a bare ``ruff check`` from the test
+    session would discover: that checked the output under rules the generated package
+    never claimed, and passed while a user running ``--check`` on the very same output
+    got failures.
+    """
     ruff = shutil.which("ruff")
     assert ruff is not None
-    result = subprocess.run([ruff, "check", str(package_dir)], capture_output=True, text=True)
+    config = package_dir.parent / "pyproject.toml"
+    assert config.is_file()
+    result = subprocess.run(
+        [ruff, "check", "--config", str(config), str(package_dir)], capture_output=True, text=True
+    )
     assert result.returncode == 0, result.stdout + result.stderr
 
 
@@ -180,6 +191,38 @@ def test_generation_is_deterministic(spec_file: Path, tmp_path: Path, stubs: boo
     sources_a = _collect_sources(tmp_path / "a" / "det_client")
     sources_b = _collect_sources(tmp_path / "b" / "det_client")
     assert sources_a == sources_b
+
+
+def test_generation_ignores_an_ambient_ruff_config(
+    spec_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same spec must produce the same bytes wherever the generator is run from.
+
+    The formatting pass used to let ruff discover config the way ruff normally does --
+    from the working directory and its parents -- so a package generated inside a
+    project with its own ``line-length`` came out wrapped differently from the same
+    package generated anywhere else. ``test_generation_is_deterministic`` could not see
+    it: both of its runs share one working directory.
+
+    Each run below puts the output *under* a directory carrying a hostile config, so
+    both cwd-based and parent-based discovery are in play.
+    """
+    outputs = []
+    for width in (50, 200):
+        home = tmp_path / f"w{width}"
+        home.mkdir()
+        (home / "pyproject.toml").write_text(f"[tool.ruff]\nline-length = {width}\n")
+        monkeypatch.chdir(home)
+        run_generation(
+            str(spec_file),
+            GeneratorConfig(package_name="amb_client", output_dir=home / "out"),
+        )
+        outputs.append(_collect_sources(home / "out" / "amb_client"))
+
+    assert outputs[0] == outputs[1]
+    # and the bytes are the package's own: 88 columns, not 50 and not 200
+    longest = max(len(line) for src in outputs[0].values() for line in src.splitlines())
+    assert longest <= 88
 
 
 def test_a_parameter_named_self_still_generates(tmp_path: Path) -> None:
